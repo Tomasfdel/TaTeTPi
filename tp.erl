@@ -2,10 +2,9 @@
 -compile(export_all).
 
 init() ->
-	{ok, NameTable} = dets:open_file(nametable, []),
-	dets:insert(NameTable, {"Tomasu"}),
 	case gen_tcp:listen(8000, [{active, true}]) of
     {ok, ListenSocket} ->	io:format("Ando~n"), 
+							{ok, NameTable} = dets:open_file(nametable, []),
 							dispatcher(ListenSocket, NameTable);
     {error, eaddrinuse} -> init() end.
 
@@ -31,7 +30,15 @@ pcomando(DaddyID, Msg, NameTable) ->
 	MsgList = string:tokens(Msg, " "),
 	case lists:nth(1, MsgList) of
 		"BYE\r\n" -> DaddyID ! {close};
-		"FIND" -> case dets:lookup(NameTable, {lists:nth(2, MsgList)}) of
-					[] -> {rambo, "N I S M A N E A D O\n"};
-					_ -> {rambo, "Acata\n"} end;
-		_ -> DaddyID ! {rambo, "F U C K Y O U \n"} end.
+		
+		"CON" -> 	Username = lists:nth(2, MsgList),
+					case dets:lookup(NameTable, Username) of
+					[] -> 	dets:insert(NameTable, {Username}), 
+							DaddyID ! {rambo, "OK\n"};
+					_ -> DaddyID ! {rambo, "ERROR Nombre ya existente\n"} end;
+					
+		"FIND" -> 	case dets:lookup(NameTable, lists:nth(2, MsgList)) of
+					[] -> DaddyID ! {rambo, "N I S M A N E A D O\n"};
+					_ -> DaddyID ! {rambo, "Acata\n"} end;
+				
+		_ -> DaddyID ! {rambo, Msg} end.
