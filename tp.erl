@@ -1,35 +1,40 @@
 -module(tp).
 -compile(export_all).
 
+%~ NameTable: Inserta tuplas unitarias con los nombres de jugador.
+%~ GameTable: Inserts tuplas de la forma {juegoID, tablero, jugadores, spectators}.
+
+
 init() ->
 	case gen_tcp:listen(8000, [{active, true}]) of
     {ok, ListenSocket} ->	io:format("Ando~n"), 
-							{ok, NameTable} = dets:open_file(nametable, []),
-							dispatcher(ListenSocket, NameTable);
+							{ok, NameTable} = dets:open_file(playerNames, []),
+							{ok, GameTable} = dets:open_file(games, []),
+							dispatcher(ListenSocket, NameTable, GameTable);
     {error, eaddrinuse} -> init() end.
 
 
  
-dispatcher(ListenSocket, NameTable) ->
+dispatcher(ListenSocket, NameTable, GameTable) ->
 					{ok, Socket} = gen_tcp:accept(ListenSocket),
-					spawn(?MODULE, dispatcher, [ListenSocket, NameTable]),
-					psocket(Socket, NameTable).
+					spawn(?MODULE, dispatcher, [ListenSocket, NameTable, GameTable]),
+					psocket(Socket, NameTable, GameTable).
 	
 
 
  
-psocket(Socket, NameTable) -> receive {tcp, Socket, Msg} -> spawn(?MODULE, pcomando, [self(), Msg, NameTable]), 
-												 psocket(Socket, NameTable);
-						   {rambo, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable);
+psocket(Socket, NameTable, GameTable) -> receive {tcp, Socket, Msg} -> 	spawn(?MODULE, pcomando, [self(), Msg, NameTable, GameTable]), 
+																		psocket(Socket, NameTable, GameTable);
+						   {rambo, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable);
 						   {close} -> gen_tcp:close(Socket);
 						   _ -> io:format("Woops ~n") end.
 						   
 
 
-pcomando(DaddyID, Msg, NameTable) ->
+pcomando(DaddyID, Msg, NameTable, GameTable) ->
 	MsgList = string:tokens(Msg, " "),
 	case lists:nth(1, MsgList) of
-		"BYE\r\n" -> DaddyID ! {close};
+		"BYE" -> DaddyID ! {close};
 		
 		"CON" -> 	Username = lists:nth(2, MsgList),
 					case dets:lookup(NameTable, Username) of
