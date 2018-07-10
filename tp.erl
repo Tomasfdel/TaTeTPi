@@ -5,7 +5,7 @@
 %~ GameTable: Inserts tuplas de la forma {juegoID, tablero, turno, jugadores, jugadoresID ,spectatorID}.
 
 newGame(GameTable, Creator, CreatorID) ->
-	%~ id, tablero, turno, jugadores, espectadores
+	%~ id, tablero, turno, jugadores, jugadoresID, espectadoresID
 	dets:insert(GameTable, {getGameID(), newBoard(), 1, {Creator}, {CreatorID}, {}}).
 
 getGameID() ->
@@ -26,6 +26,100 @@ turnFig(Turn) ->
 	case Turn of
 		1 -> x;
 		2 -> o end.
+
+sendToList(IDList, Msg) ->
+	case IDList of
+		[] 	  -> ok;
+		[H|T] -> H ! {ok, Msg},
+				 sendToList(T, Msg) end.
+
+checkGameEnd(Board, CurrentPlayer) ->
+	VictoryMsg = "Fin del juego. Ha ganado "++CurrentPlayer++"!\n",
+	DrawMsg = "Fin del juego. Empate! Git gud scrubs.\n",
+	case Board of
+			{x, x, x,
+			 _, _, _,
+			 _, _, _} -> {fin, VictoryMsg};
+
+			{_, _, _,
+			 x, x, x,
+			 _, _, _} -> {fin, VictoryMsg};
+
+			{_, _, _,
+			 _, _, _,
+			 x, x, x} -> {fin, VictoryMsg};
+
+			{x, _, _,
+			 x, _, _,
+			 x, _, _} -> {fin, VictoryMsg};
+
+			{_, x, _,
+			 _, x, _,
+			 _, x, _} -> {fin, VictoryMsg};
+
+			{_, _, x,
+			 _, _, x,
+			 _, _, x} -> {fin, VictoryMsg};
+
+			{x, _, _,
+			 _, x, _,
+			 _, _, x} -> {fin, VictoryMsg};
+
+			{_, _, x,
+			 _, x, _,
+			 x, _, _} -> {fin, VictoryMsg};
+
+			{o, o, o,
+			 _, _, _,
+			 _, _, _} -> {fin, VictoryMsg};
+
+			{_, _, _,
+			 o, o, o,
+			 _, _, _} -> {fin, VictoryMsg};
+
+			{_, _, _,
+			 _, _, _,
+			 o, o, o} -> {fin, VictoryMsg};
+
+			{o, _, _,
+			 o, _, _,
+			 o, _, _} -> {fin, VictoryMsg};
+
+			{_, o, _,
+			 _, o, _,
+			 _, o, _} -> {fin, VictoryMsg};
+
+			{_, _, o,
+			 _, _, o,
+			 _, _, o} -> {fin, VictoryMsg};
+
+			{o, _, _,
+			 _, o, _,
+			 _, _, o} -> {fin, VictoryMsg};
+
+			{_, _, o,
+			 _, o, _,
+			 o, _, _} -> {fin, VictoryMsg};
+
+			{A, B, C,
+			 D, E, F,
+			 G, H, I} when A =/= vacio, B =/= vacio, C =/= vacio,
+						   D =/= vacio, E =/= vacio, F =/= vacio,
+						   G =/= vacio, H =/= vacio, I =/= vacio ->
+				{fin, DrawMsg};
+
+			_ -> ok end.
+
+broadcastMove(Board, PlayerIDs, Spectators, CurrentPlayer, GameTable, GameID) ->
+	PlayerList = erlang:tuple_to_list(PlayerIDs),
+	SpectatorList = erlang:tuple_to_list(Spectators),
+	sendToList(PlayerList, "Tablero updateado correctamente.\n"),
+	sendToList(SpectatorList, "Tablero updateado correctamente.\n"),
+	case checkGameEnd(Board, CurrentPlayer) of
+		{fin, Msg} -> sendToList(PlayerList, Msg),
+					  sendToList(SpectatorList, Msg),
+					  dets:delete(GameTable, GameID);
+		_ -> ok end.
      
 makeMove(DaddyID, GameTable, GameID, CurrentPlayer, Pos) ->
 	case dets:lookup(GameTable, GameID) of
@@ -36,7 +130,8 @@ makeMove(DaddyID, GameTable, GameID, CurrentPlayer, Pos) ->
 					case element(Pos, Board) of
 						%~ Falta chequear final
 						vacio -> dets:insert(GameTable, {GameID, setelement(Pos, Board, turnFig(Turn)), changeTurn(Turn), Players, PlayerIDs, Spectators}),
-								 DaddyID ! {ok, "Tablero updateado correctamente\n"};
+								 %~ Movimiento valido
+								 broadcastMove(Board, PlayerIDs, Spectators, CurrentPlayer, GameTable, GameID);
 						_ -> DaddyID ! {error, "ERROR Posicion previamente ocupada\n"} end;
 				_ -> DaddyID ! {error, "ERROR No es tu turno, tramposo!\n"} end;	
 		%~ CAMBIAR ESTE MENSAJE ANTES DE ENTREGAR
