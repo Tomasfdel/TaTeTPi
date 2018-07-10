@@ -4,13 +4,17 @@
 %~ NameTable: Inserta tuplas unitarias con los nombres de jugador.
 %~ GameTable: Inserts tuplas de la forma {juegoID, tablero, turno, jugadores, jugadoresID ,spectatorID}.
 
-newGame(GameTable, Creator, CreatorID) ->
+newGame(GameTable, Creator, CreatorID, UltimoGameID) ->
 	%~ id, tablero, turno, jugadores, jugadoresID, espectadoresID
-	dets:insert(GameTable, {getGameID(), newBoard(), 1, {Creator}, {CreatorID}, {}}).
+	GameID = getGameID(UltimoGameID),
+	dets:insert(GameTable, {GameID, newBoard(), 1, {Creator}, {CreatorID}, {}}),
+	GameID.
 
-getGameID() ->
-	%~ dummy pls fix
-	1.
+getGameID(UltimoGameID) ->
+	[{"ID", Id}] = dets:lookup(UltimoGameID, "ID"),
+	dets:insert(UltimoGameID, {"ID", Id + 1}),
+	Id + 1.
+	
 
 newBoard() ->
     {vacio, vacio, vacio,
@@ -144,25 +148,28 @@ init() ->
     {ok, ListenSocket} ->	io:format("Ando~n"),
 							{ok, NameTable} = dets:open_file(playerNames, []),
 							{ok, GameTable} = dets:open_file(games, []),
+							{ok, UltimoGameID} = dets:open_file(ultimoGameID, []),
 							dets:delete_all_objects(NameTable),
 							dets:delete_all_objects(GameTable),
-							dispatcher(ListenSocket, NameTable, GameTable);
+							dets:delete_all_objects(UltimoGameID),
+							dets:insert(UltimoGameID, {"ID", 0}),
+							dispatcher(ListenSocket, NameTable, GameTable, UltimoGameID);
     {error, eaddrinuse} -> init() end.
 
 
  
-dispatcher(ListenSocket, NameTable, GameTable) ->
+dispatcher(ListenSocket, NameTable, GameTable, UltimoGameID) ->
 					{ok, Socket} = gen_tcp:accept(ListenSocket),
-					spawn(?MODULE, dispatcher, [ListenSocket, NameTable, GameTable]),
-					pSocketLogin(Socket, NameTable, GameTable).
+					spawn(?MODULE, dispatcher, [ListenSocket, NameTable, GameTable, UltimoGameID]),
+					pSocketLogin(Socket, NameTable, GameTable, UltimoGameID).
 
 	
 %~ Hacer consistente el formato de los mensajes
-pSocketLogin(Socket, NameTable, GameTable) -> 
+pSocketLogin(Socket, NameTable, GameTable, UltimoGameID) -> 
 	receive {tcp, Socket, Msg} -> 	spawn(?MODULE, pcomandoLogin, [self(), Msg, NameTable]),
-									pSocketLogin(Socket, NameTable, GameTable);
-			{rambo, ok, Msg, Username} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable, Username);
-			{rambo, error, Msg} -> gen_tcp:send(Socket, Msg), pSocketLogin(Socket, NameTable, GameTable);
+									pSocketLogin(Socket, NameTable, GameTable, UltimoGameID);
+			{rambo, ok, Msg, Username} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable, Username, UltimoGameID);
+			{rambo, error, Msg} -> gen_tcp:send(Socket, Msg), pSocketLogin(Socket, NameTable, GameTable, UltimoGameID);
 			{close} -> gen_tcp:close(Socket);
 			_ -> io:format("Woops ~n") end.
 
@@ -180,18 +187,18 @@ pcomandoLogin(DaddyID, Msg, NameTable) ->
 
 
  
-psocket(Socket, NameTable, GameTable, Username) -> 
-	receive {tcp, Socket, Msg} -> 	spawn(?MODULE, pcomando, [self(), Msg, NameTable, GameTable, Username]), 
-									psocket(Socket, NameTable, GameTable, Username);
+psocket(Socket, NameTable, GameTable, Username, UltimoGameID) -> 
+	receive {tcp, Socket, Msg} -> 	spawn(?MODULE, pcomando, [self(), Msg, NameTable, GameTable, Username, UltimoGameID]), 
+									psocket(Socket, NameTable, GameTable, Username, UltimoGameID);
 			%~ Esto deberia cambiar
-			{rambo, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable, Username);
-			{ok, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable, Username);
-			{error, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable, Username);
+			{rambo, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable, Username, UltimoGameID);
+			{ok, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable, Username, UltimoGameID);
+			{error, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable, Username, UltimoGameID);
 			{close} -> gen_tcp:close(Socket);
 			_ -> io:format("Woops ~n") end.
 
 
-pcomando(DaddyID, Msg, NameTable, GameTable, Username) ->
+pcomando(DaddyID, Msg, NameTable, GameTable, Username, UltimoGameID) ->
 	MsgList = string:tokens(string:trim(Msg), " "),
 	case lists:nth(1, MsgList) of
 		"BYE" -> DaddyID ! {close};
@@ -202,9 +209,8 @@ pcomando(DaddyID, Msg, NameTable, GameTable, Username) ->
 					[] -> DaddyID ! {rambo, "N I S M A N E A D O\n"};
 					_ -> DaddyID ! {rambo, "Acata\n"} end;
 		%~ dummy pls fix		
-		"NEW" ->	newGame(GameTable, Username, DaddyID),
-					%~ Hacer que le pase el GameID de verdad
-					DaddyID ! {rambo, "Game creado, tu GameID es 1 Kappa\n"};
+		"NEW" ->	GameID = newGame(GameTable, Username, DaddyID, UltimoGameID),
+					DaddyID ! {rambo, "Game creado, tu GameID es "++integer_to_list(GameID)++" Kappa\n"};
 				
 		"ACC" ->	GameID = erlang:list_to_integer(lists:nth(2, MsgList)),
 					case dets:lookup(GameTable, GameID) of
@@ -213,15 +219,14 @@ pcomando(DaddyID, Msg, NameTable, GameTable, Username) ->
 							case size(Players) of
 								%~ Si ponemos random no siempre empieza el creador
 								1 -> dets:insert(GameTable, {GameID, Board, Turn, erlang:insert_element(2, Players, Username), erlang:insert_element(2, PlayerIDs, DaddyID), Spectators}),
-									 %~ Pls fix GameID
-									 DaddyID ! {ok, "OK Te uniste al juego 1 Kappa\n"},
+									 DaddyID ! {ok, "OK Te uniste al juego "++integer_to_list(GameID)++" Kappa\n"},
 									 %~ Si ponemos random se rompe esta linea
 									 element(1, PlayerIDs) ! {ok, "OK Se han unido a tu juego\n"};
 								_ -> DaddyID ! {error, "ERROR Juego lleno\n"} end;
 						_ -> DaddyID ! {error, "ERROR No sabemos sintaxis de Erlang\n"} end;
 		
 		"PLA" ->	%~ Arreglar GameID
-					GameID = 1,
+					GameID = erlang:list_to_integer(lists:nth(2, MsgList)),
 					Pos = erlang:list_to_integer(lists:nth(3, MsgList)),
 					makeMove(DaddyID, GameTable, GameID, Username, Pos);				
 		_ -> DaddyID ! {rambo, "ERROR Comando no válido\n"} end.
