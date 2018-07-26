@@ -1,0 +1,17 @@
+[TODO]
+
+
+Comandos faltantes: LSG, LEA, BYE
+Ver que pasa cuando un jugador abandona una partida
+
+
+Evitar que nos hagan cacking con mensajes raros
+Borrar una partida cuando se va un jugador
+Idle check del jugador
+Migrar a MNESIA
+create_schema de MNESIA
+
+
+
+[TOCHECK]
+Espectadores

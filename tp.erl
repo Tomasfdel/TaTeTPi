@@ -37,9 +37,9 @@ sendToList(IDList, Msg) ->
 		[H|T] -> H ! {ok, Msg},
 				 sendToList(T, Msg) end.
 
-checkGameEnd(Board, CurrentPlayer) ->
-	VictoryMsg = "Fin del juego. Ha ganado "++CurrentPlayer++"!\n",
-	DrawMsg = "Fin del juego. Empate! Git gud scrubs.\n",
+checkGameEnd(Board, GameID, CurrentPlayer) ->
+	VictoryMsg = "Fin del juego "++integer_to_list(GameID)++". Ha ganado "++CurrentPlayer++"!\n",
+	DrawMsg = "Fin del juego "++integer_to_list(GameID)++". Empate! Git gud scrubs.\n",
 	case Board of
 			{x, x, x,
 			 _, _, _,
@@ -114,12 +114,29 @@ checkGameEnd(Board, CurrentPlayer) ->
 
 			_ -> ok end.
 
+stateToString(S) ->
+	case S of
+		x -> " X ";
+		o -> " O ";
+		_ -> "   " end.
+
+
+makeBoardString(Board) ->
+    stateToString(element(1, Board)) ++ "|" ++ stateToString(element(2, Board)) ++ "|" ++ stateToString(element(3, Board)) ++
+    "\n----------\n" ++
+    stateToString(element(4, Board)) ++ "|" ++ stateToString(element(5, Board)) ++ "|" ++ stateToString(element(6, Board)) ++
+    "\n----------\n" ++
+    stateToString(element(7, Board)) ++ "|" ++ stateToString(element(8, Board)) ++ "|" ++ stateToString(element(9, Board)) ++
+    "\n".
+
+
 broadcastMove(Board, PlayerIDs, Spectators, CurrentPlayer, GameTable, GameID) ->
 	PlayerList = erlang:tuple_to_list(PlayerIDs),
 	SpectatorList = erlang:tuple_to_list(Spectators),
-	sendToList(PlayerList, "Tablero updateado correctamente.\n"),
-	sendToList(SpectatorList, "Tablero updateado correctamente.\n"),
-	case checkGameEnd(Board, CurrentPlayer) of
+	BoardString = makeBoardString(Board),
+	sendToList(PlayerList, "Tablero updateado correctamente. Estado actual de la partida "++ integer_to_list(GameID) ++":\n" ++ BoardString ++ "\n"),
+	sendToList(SpectatorList, "Tablero updateado correctamente. Estado actual de la partida "++ integer_to_list(GameID) ++":\n" ++ BoardString ++ "\n"),
+	case checkGameEnd(Board, GameID, CurrentPlayer) of
 		{fin, Msg} -> sendToList(PlayerList, Msg),
 					  sendToList(SpectatorList, Msg),
 					  dets:delete(GameTable, GameID);
@@ -129,18 +146,43 @@ makeMove(DaddyID, GameTable, GameID, CurrentPlayer, Pos) ->
 	case dets:lookup(GameTable, GameID) of
 		[] -> DaddyID ! {error, "ERROR Juego no encontrado\n"};
 		[{GameID, Board, Turn, Players, PlayerIDs, Spectators}] ->
-			case element(Turn, Players) of
+		case tuple_size(Players) of
+			2 -> case element(Turn, Players) of
 				CurrentPlayer ->
 					case element(Pos, Board) of
 						%~ Falta chequear final
-						vacio -> dets:insert(GameTable, {GameID, setelement(Pos, Board, turnFig(Turn)), changeTurn(Turn), Players, PlayerIDs, Spectators}),
+						vacio -> NewBoard = setelement(Pos, Board, turnFig(Turn)),
+								 dets:insert(GameTable, {GameID, NewBoard, changeTurn(Turn), Players, PlayerIDs, Spectators}),
 								 %~ Movimiento valido
-								 broadcastMove(Board, PlayerIDs, Spectators, CurrentPlayer, GameTable, GameID);
+								 broadcastMove(NewBoard, PlayerIDs, Spectators, CurrentPlayer, GameTable, GameID);
 						_ -> DaddyID ! {error, "ERROR Posicion previamente ocupada\n"} end;
-				_ -> DaddyID ! {error, "ERROR No es tu turno, tramposo!\n"} end;	
+				_ -> DaddyID ! {error, "ERROR No es tu turno, tramposo!\n"} end;
+			_ -> DaddyID ! {error, "ERROR Esto no es el solitario, papu.\n"} end;
 		%~ CAMBIAR ESTE MENSAJE ANTES DE ENTREGAR
 		_ -> DaddyID ! {error, "ERROR Instructions unclear, dick stuck in ceiling fan\n"} end.
 
+
+joinGame(DaddyID, GameTable, GameID, Username) ->
+	case dets:lookup(GameTable, GameID) of
+		[] -> DaddyID ! {error, "ERROR Juego no encontrado\n"};
+		[{GameID, Board, Turn, Players, PlayerIDs, Spectators}] ->
+			case tuple_size(Players) of
+				%~ Si ponemos random no siempre empieza el creador
+				1 -> dets:insert(GameTable, {GameID, Board, Turn, erlang:insert_element(2, Players, Username), erlang:insert_element(2, PlayerIDs, DaddyID), Spectators}),
+					 DaddyID ! {ok, "OK Te uniste al juego "++integer_to_list(GameID)++" Kappa\n"},
+					 %~ Si ponemos random se rompe esta linea
+					 element(1, PlayerIDs) ! {ok, "OK Se han unido a tu juego\n"};
+				_ -> DaddyID ! {error, "ERROR Juego lleno\n"} end;
+		_ -> DaddyID ! {error, "ERROR No sabemos sintaxis de Erlang\n"} end.
+
+
+spectateGame(DaddyID, GameTable, GameID) ->
+	case dets:lookup(GameTable, GameID) of
+		[] -> DaddyID ! {error, "ERROR Juego no encontrado\n"};
+		[{GameID, Board, Turn, Players, PlayerIDs, Spectators}] ->
+			dets:insert(GameTable, {GameID, Board, Turn, Players, PlayerIDs, erlang:insert_element(tuple_size(Spectators) + 1, Spectators, DaddyID)}),
+			DaddyID ! {ok, "OK Observando el juego "++integer_to_list(GameID)++". Estado actual de la partida:\n" ++ makeBoardString(Board) ++ "\n"};
+		_ -> DaddyID ! {error, "ERROR No sabemos sintaxis de Erlang\n"} end.
 
 
 init() ->
@@ -201,7 +243,7 @@ psocket(Socket, NameTable, GameTable, Username, UltimoGameID) ->
 pcomando(DaddyID, Msg, NameTable, GameTable, Username, UltimoGameID) ->
 	MsgList = string:tokens(string:trim(Msg), " "),
 	case lists:nth(1, MsgList) of
-		"BYE" -> DaddyID ! {close};
+		"BYE" -> 	DaddyID ! {close};
 		
 		"CON" -> 	DaddyID ! {rambo, "ERROR Sesión ya iniciada\n"};
 					
@@ -210,23 +252,17 @@ pcomando(DaddyID, Msg, NameTable, GameTable, Username, UltimoGameID) ->
 					_ -> DaddyID ! {rambo, "Acata\n"} end;
 		%~ dummy pls fix		
 		"NEW" ->	GameID = newGame(GameTable, Username, DaddyID, UltimoGameID),
-					DaddyID ! {rambo, "Game creado, tu GameID es "++integer_to_list(GameID)++" Kappa\n"};
+					DaddyID ! {rambo, "Game creado, tu GameID es "++integer_to_list(GameID)++"\n"};
 				
 		"ACC" ->	GameID = erlang:list_to_integer(lists:nth(2, MsgList)),
-					case dets:lookup(GameTable, GameID) of
-						[] -> DaddyID ! {error, "ERROR Juego no encontrado\n"};
-						[{GameID, Board, Turn, Players, PlayerIDs, Spectators}] ->
-							case size(Players) of
-								%~ Si ponemos random no siempre empieza el creador
-								1 -> dets:insert(GameTable, {GameID, Board, Turn, erlang:insert_element(2, Players, Username), erlang:insert_element(2, PlayerIDs, DaddyID), Spectators}),
-									 DaddyID ! {ok, "OK Te uniste al juego "++integer_to_list(GameID)++" Kappa\n"},
-									 %~ Si ponemos random se rompe esta linea
-									 element(1, PlayerIDs) ! {ok, "OK Se han unido a tu juego\n"};
-								_ -> DaddyID ! {error, "ERROR Juego lleno\n"} end;
-						_ -> DaddyID ! {error, "ERROR No sabemos sintaxis de Erlang\n"} end;
+					joinGame(DaddyID, GameTable, GameID, Username);
 		
 		"PLA" ->	%~ Arreglar GameID
 					GameID = erlang:list_to_integer(lists:nth(2, MsgList)),
 					Pos = erlang:list_to_integer(lists:nth(3, MsgList)),
 					makeMove(DaddyID, GameTable, GameID, Username, Pos);				
+		
+		"OBS" ->	GameID = erlang:list_to_integer(lists:nth(2, MsgList)),
+					spectateGame(DaddyID, GameTable, GameID);
+
 		_ -> DaddyID ! {rambo, "ERROR Comando no válido\n"} end.
