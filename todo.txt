@@ -5,13 +5,14 @@ Comandos faltantes: LSG, LEA, BYE
 Ver que pasa cuando un jugador abandona una partida
 
 
-Evitar que nos hagan cacking con mensajes raros
 Borrar una partida cuando se va un jugador
 Idle check del jugador
-Migrar a MNESIA
-create_schema de MNESIA
-
-
+Hacer el parsing en pcomandologin
+borrar delete table!!!!
+No permitir que te unas a tu propio juego (Bug or feature?)
 
 [TOCHECK]
-Espectadores
+
+[KNOWN ISSUES]
+ACC a un juego no existente manda dos mensajes
+PLA no revisa posiciones fuera de rango

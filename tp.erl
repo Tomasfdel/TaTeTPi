@@ -146,6 +146,11 @@ makeBoardString(Board) ->
     stateToString(element(7, Board)) ++ "|" ++ stateToString(element(8, Board)) ++ "|" ++ stateToString(element(9, Board)) ++
     "\n".
 
+is_integer_list(S) -> try   _ = list_to_integer(S),
+							true
+					  catch error:badarg -> false
+					  end.
+
 
 broadcastMove(Board, PlayerIDs, Spectators, CurrentPlayer, GameID) ->
 	PlayerList = erlang:tuple_to_list(PlayerIDs),
@@ -277,27 +282,75 @@ psocket(Socket, Username) ->
 
 pcomando(DaddyID, Msg, Username) ->
 	MsgList = string:tokens(string:trim(Msg), " "),
-	case lists:nth(1, MsgList) of
-		"BYE" -> 	DaddyID ! {close};
-		
-		"CON" -> 	DaddyID ! {rambo, "ERROR Sesión ya iniciada\n"};
+	case length(MsgList) of
+		0 -> DaddyID ! {error, "ERROR Mensaje vacio\n"};
+		_ -> case lists:nth(1, MsgList) of
+					"FIND" -> 	case length(MsgList) of
+									2 -> case mnesia:transaction(fun() -> mnesia:read(nameTable, lists:nth(2, MsgList)) end) of
+											{aborted, Msg} -> DaddyID ! {rambo, "Find transaction broke: "++Msg++"~n"};
+											{atomic, []} -> DaddyID ! {rambo, "N I S M A N E A D O\n"};
+											_ -> DaddyID ! {rambo, "Acata\n"} 
+										end;
+									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: FIND PlayerName\n"}
+								end;
+								
+					"CON" -> 	DaddyID ! {rambo, "ERROR Sesion ya iniciada\n"};
+					%~ TESTING ENVIRONMENT
+					%~ "LSG" -> 	case length(MsgList) of
+									%~ 1 -> PatPending = #gameTable{players = {_}, _ = '_'},
+										 %~ PatFull =#gameTable{players = {_, _}, _ = '_'},
+										 %~ Pending = mnesia:transaction(fun () -> mnesia:match_object(PatPending) end),
+										 %~ Full = mnesia:transaction(fun () -> mnesia:match_object(PatFull) end),
+										 %~ io:format("~p~n~p~n", [Pending, Full]);
+									%~ _ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: LSG\n"} 
+								%~ end; 
 					
-		"FIND" -> 	case mnesia:transaction(fun() -> mnesia:read(nameTable, lists:nth(2, MsgList)) end) of
-					{aborted, Msg} -> DaddyID ! {rambo, "Find transaction broke: "++Msg++"~n"};
-					{atomic, []} -> DaddyID ! {rambo, "N I S M A N E A D O\n"};
-					_ -> DaddyID ! {rambo, "Acata\n"} end;
+					"NEW" ->	case length(MsgList) of
+									1 -> GameID = newGame(Username, DaddyID),
+										 DaddyID ! {rambo, "Game creado, tu GameID es "++integer_to_list(GameID)++"\n"};
+									_ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: NEW\n"} 
+								end;
+							
+					"ACC" ->	case length(MsgList) of
+									2 -> PosibleGameID = lists:nth(2, MsgList),
+									     case is_integer_list(PosibleGameID) of
+											true -> GameID = erlang:list_to_integer(PosibleGameID),
+													joinGame(DaddyID, GameID, Username);
+											false -> DaddyID ! {error, "ERROR Valor de Game ID invalido\n"} 
+										 end;
+									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: ACC GameID\n"}
+								end;
 					
-		"NEW" ->	GameID = newGame(Username, DaddyID),
-					DaddyID ! {rambo, "Game creado, tu GameID es "++integer_to_list(GameID)++"\n"};
-				
-		"ACC" ->	GameID = erlang:list_to_integer(lists:nth(2, MsgList)),
-					joinGame(DaddyID, GameID, Username);
-		
-		"PLA" ->	GameID = erlang:list_to_integer(lists:nth(2, MsgList)),
-					Pos = erlang:list_to_integer(lists:nth(3, MsgList)),
-					makeMove(DaddyID, GameID, Username, Pos);				
-		
-		"OBS" ->	GameID = erlang:list_to_integer(lists:nth(2, MsgList)),
-					spectateGame(DaddyID, GameID);
-
-		_ -> DaddyID ! {rambo, "ERROR Comando no válido\n"} end.
+					"PLA" ->	case length(MsgList) of
+									3 -> PosibleGameID = lists:nth(2, MsgList),
+										 PosiblePosicion = lists:nth(3, MsgList),
+										 case is_integer_list(PosibleGameID) of
+											true -> GameID = erlang:list_to_integer(PosibleGameID),
+													case is_integer_list(PosiblePosicion) of
+														true -> Posicion = erlang:list_to_integer(PosiblePosicion),
+																makeMove(DaddyID, GameID, Username, Posicion);
+														false -> DaddyID ! {error, "ERROR Valor de Posicion invalido\n"} 
+													end;
+											false -> DaddyID ! {error, "ERROR Valor de GameID invalido\n"} 
+										 end;
+									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: PLA GameID Posicion\n"} 
+								end;
+					
+					"OBS" ->	case length(MsgList) of
+									2 -> PosibleGameID = lists:nth(2, MsgList),
+									     case is_integer_list(PosibleGameID) of
+											true -> GameID = erlang:list_to_integer(PosibleGameID),
+													spectateGame(DaddyID, GameID);
+											false -> DaddyID ! {error, "ERROR Valor de Game ID invalido\n"} 
+										 end;
+									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: OBS GameID\n"}
+								end;
+								
+					"BYE" -> 	case length(MsgList) of
+									1 -> DaddyID ! {close};
+									_ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: BYE\n"}
+								end;
+								
+					_ -> DaddyID ! {rambo, "ERROR Comando no valido\n"} 
+			 end
+	end.
