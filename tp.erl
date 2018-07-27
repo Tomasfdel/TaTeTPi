@@ -1,19 +1,36 @@
 -module(tp).
 -compile(export_all).
+-record(nameTable, {name, dummy}).
+-record(gameTable, {gameID,
+                    board,
+                    turn,
+                    players,
+                    playerIDs,
+                    spectators}).
+-record(ultimoGameID, {dummy = 420, id}).
 
-%~ NameTable: Inserta tuplas unitarias con los nombres de jugador.
-%~ GameTable: Inserts tuplas de la forma {juegoID, tablero, turno, jugadores, jugadoresID ,spectatorID}.
 
-newGame(GameTable, Creator, CreatorID, UltimoGameID) ->
-	%~ id, tablero, turno, jugadores, jugadoresID, espectadoresID
-	GameID = getGameID(UltimoGameID),
-	dets:insert(GameTable, {GameID, newBoard(), 1, {Creator}, {CreatorID}, {}}),
+newGame(Creator, CreatorID) ->
+	GameID = getGameID(),
+	F = fun() ->
+		mnesia:write(#gameTable{gameID     = GameID,
+								board      = newBoard(),
+								turn       = 1,
+								players    = {Creator},
+								playerIDs  = {CreatorID},
+								spectators = {} 
+								}) end,
+	{atomic, ok} = mnesia:transaction(F),
 	GameID.
 
-getGameID(UltimoGameID) ->
-	[{"ID", Id}] = dets:lookup(UltimoGameID, "ID"),
-	dets:insert(UltimoGameID, {"ID", Id + 1}),
-	Id + 1.
+getGameID() ->
+	F = fun() ->
+		[ID] = mnesia:read(ultimoGameID, 420),
+		NewID = ID#ultimoGameID.id + 1,
+		mnesia:write(ID#ultimoGameID{id=NewID}),
+		NewID end,
+	{atomic, NewID} = mnesia:transaction(F),
+	NewID.
 	
 
 newBoard() ->
@@ -130,7 +147,7 @@ makeBoardString(Board) ->
     "\n".
 
 
-broadcastMove(Board, PlayerIDs, Spectators, CurrentPlayer, GameTable, GameID) ->
+broadcastMove(Board, PlayerIDs, Spectators, CurrentPlayer, GameID) ->
 	PlayerList = erlang:tuple_to_list(PlayerIDs),
 	SpectatorList = erlang:tuple_to_list(Spectators),
 	BoardString = makeBoardString(Board),
@@ -139,130 +156,148 @@ broadcastMove(Board, PlayerIDs, Spectators, CurrentPlayer, GameTable, GameID) ->
 	case checkGameEnd(Board, GameID, CurrentPlayer) of
 		{fin, Msg} -> sendToList(PlayerList, Msg),
 					  sendToList(SpectatorList, Msg),
-					  dets:delete(GameTable, GameID);
+					  {atomic, ok} = mnesia:transaction(fun() -> mnesia:delete({gameTable, GameID}) end);
 		_ -> ok end.
      
-makeMove(DaddyID, GameTable, GameID, CurrentPlayer, Pos) ->
-	case dets:lookup(GameTable, GameID) of
-		[] -> DaddyID ! {error, "ERROR Juego no encontrado\n"};
-		[{GameID, Board, Turn, Players, PlayerIDs, Spectators}] ->
+makeMove(DaddyID, GameID, CurrentPlayer, Pos) ->
+	F = fun() -> case mnesia:read(gameTable, GameID) of
+		[] -> {error, "ERROR Juego no encontrado\n"};
+		[{_, GameID, Board, Turn, Players, PlayerIDs, Spectators} = Game] ->
 		case tuple_size(Players) of
 			2 -> case element(Turn, Players) of
 				CurrentPlayer ->
+				%~ REVISAR QUE HAYA UNA POSICION VALIDA
 					case element(Pos, Board) of
-						%~ Falta chequear final
 						vacio -> NewBoard = setelement(Pos, Board, turnFig(Turn)),
-								 dets:insert(GameTable, {GameID, NewBoard, changeTurn(Turn), Players, PlayerIDs, Spectators}),
+								 ok = mnesia:write(Game#gameTable{board = NewBoard, turn = changeTurn(Turn)}),
 								 %~ Movimiento valido
-								 broadcastMove(NewBoard, PlayerIDs, Spectators, CurrentPlayer, GameTable, GameID);
-						_ -> DaddyID ! {error, "ERROR Posicion previamente ocupada\n"} end;
-				_ -> DaddyID ! {error, "ERROR No es tu turno, tramposo!\n"} end;
-			_ -> DaddyID ! {error, "ERROR Esto no es el solitario, papu.\n"} end;
+								 broadcastMove(NewBoard, PlayerIDs, Spectators, CurrentPlayer, GameID),
+								 ok;
+						_ -> {error, "ERROR Posicion previamente ocupada\n"} end;
+				_ -> {error, "ERROR No es tu turno, tramposo!\n"} end;
+			_ -> {error, "ERROR Esto no es el solitario, papu.\n"} end;
 		%~ CAMBIAR ESTE MENSAJE ANTES DE ENTREGAR
-		_ -> DaddyID ! {error, "ERROR Instructions unclear, dick stuck in ceiling fan\n"} end.
+		_ -> {error, "ERROR Instructions unclear, dick stuck in ceiling fan\n"} end end,
+	case mnesia:transaction(F) of
+		{atomic, {error, Msg}} -> DaddyID ! {error, Msg};
+		_ -> ok end.
 
 
-joinGame(DaddyID, GameTable, GameID, Username) ->
-	case dets:lookup(GameTable, GameID) of
-		[] -> DaddyID ! {error, "ERROR Juego no encontrado\n"};
-		[{GameID, Board, Turn, Players, PlayerIDs, Spectators}] ->
-			case tuple_size(Players) of
-				%~ Si ponemos random no siempre empieza el creador
-				1 -> dets:insert(GameTable, {GameID, Board, Turn, erlang:insert_element(2, Players, Username), erlang:insert_element(2, PlayerIDs, DaddyID), Spectators}),
-					 DaddyID ! {ok, "OK Te uniste al juego "++integer_to_list(GameID)++" Kappa\n"},
-					 %~ Si ponemos random se rompe esta linea
-					 element(1, PlayerIDs) ! {ok, "OK Se han unido a tu juego\n"};
-				_ -> DaddyID ! {error, "ERROR Juego lleno\n"} end;
-		_ -> DaddyID ! {error, "ERROR No sabemos sintaxis de Erlang\n"} end.
+joinGame(DaddyID, GameID, Username) ->
+	F = fun() ->
+		case mnesia:read(gameTable, GameID) of
+			[] -> DaddyID ! {error, "ERROR Juego no encontrado\n"};
+			[Game] ->
+				case tuple_size(Game#gameTable.players) of
+					1 -> NewPlayers = erlang:insert_element(2, Game#gameTable.players, Username),
+						 NewPlaIDs = erlang:insert_element(2, Game#gameTable.playerIDs, DaddyID),
+						 mnesia:write(Game#gameTable{players = NewPlayers, playerIDs = NewPlaIDs}),
+						 element(1, Game#gameTable.playerIDs) ! {ok, "OK Se han unido a tu juego\n"},
+						 {ok, "OK Te uniste al juego "++integer_to_list(GameID)++" Kappa\n"};
+					_ -> {error, "ERROR Juego lleno\n"} end;
+			_ -> {error, "ERROR No sabemos sintaxis de Erlang\n"} end end,
+	{atomic, Msg} = mnesia:transaction(F),
+	DaddyID ! Msg.
 
-
-spectateGame(DaddyID, GameTable, GameID) ->
-	case dets:lookup(GameTable, GameID) of
-		[] -> DaddyID ! {error, "ERROR Juego no encontrado\n"};
-		[{GameID, Board, Turn, Players, PlayerIDs, Spectators}] ->
-			dets:insert(GameTable, {GameID, Board, Turn, Players, PlayerIDs, erlang:insert_element(tuple_size(Spectators) + 1, Spectators, DaddyID)}),
-			DaddyID ! {ok, "OK Observando el juego "++integer_to_list(GameID)++". Estado actual de la partida:\n" ++ makeBoardString(Board) ++ "\n"};
-		_ -> DaddyID ! {error, "ERROR No sabemos sintaxis de Erlang\n"} end.
+spectateGame(DaddyID, GameID) ->
+	F = fun() ->
+		case mnesia:read(gameTable, GameID) of
+			[] -> {error, "ERROR Juego no encontrado\n"};
+			[Game] ->
+				Pos = tuple_size(Game#gameTable.spectators) + 1,
+				NewSpectators = erlang:insert_element(Pos, Game#gameTable.spectators, DaddyID),
+				mnesia:write(Game#gameTable{spectators = NewSpectators}),
+				{ok, "OK Observando el juego "++integer_to_list(GameID)++". Estado actual de la partida:\n" ++ makeBoardString(Game#gameTable.board) ++ "\n"};
+			_ -> {error, "ERROR No sabemos sintaxis de Erlang\n"} end end,
+	{atomic, Msg} = mnesia:transaction(F),
+	DaddyID ! Msg.
 
 
 init() ->
 	case gen_tcp:listen(8000, [{active, true}]) of
     {ok, ListenSocket} ->	io:format("Ando~n"),
-							{ok, NameTable} = dets:open_file(playerNames, []),
-							{ok, GameTable} = dets:open_file(games, []),
-							{ok, UltimoGameID} = dets:open_file(ultimoGameID, []),
-							dets:delete_all_objects(NameTable),
-							dets:delete_all_objects(GameTable),
-							dets:delete_all_objects(UltimoGameID),
-							dets:insert(UltimoGameID, {"ID", 0}),
-							dispatcher(ListenSocket, NameTable, GameTable, UltimoGameID);
+							mnesia:delete_schema([node()]),
+							mnesia:create_schema([node()]),
+							mnesia:start(),
+							mnesia:delete_table(ultimoGameID),
+							mnesia:create_table(ultimoGameID, [{attributes, record_info(fields, ultimoGameID)}]),
+							mnesia:delete_table(nameTable),
+							mnesia:create_table(nameTable, [{attributes, record_info(fields, nameTable)}]),
+							mnesia:delete_table(gameTable),
+							mnesia:create_table(gameTable, [{attributes, record_info(fields, gameTable)}]),
+							mnesia:wait_for_tables([ultimoGameID, nameTable, gameTable], 100000),
+							mnesia:transaction(fun() -> mnesia:write(#ultimoGameID{dummy = 420, id = 0}) end),
+							io:format("Ando~n"),
+							dispatcher(ListenSocket);
     {error, eaddrinuse} -> init() end.
 
-
  
-dispatcher(ListenSocket, NameTable, GameTable, UltimoGameID) ->
-					{ok, Socket} = gen_tcp:accept(ListenSocket),
-					spawn(?MODULE, dispatcher, [ListenSocket, NameTable, GameTable, UltimoGameID]),
-					pSocketLogin(Socket, NameTable, GameTable, UltimoGameID).
+dispatcher(ListenSocket) ->
+	{ok, Socket} = gen_tcp:accept(ListenSocket),
+	spawn(?MODULE, dispatcher, [ListenSocket]),
+	pSocketLogin(Socket).
 
 	
 %~ Hacer consistente el formato de los mensajes
-pSocketLogin(Socket, NameTable, GameTable, UltimoGameID) -> 
-	receive {tcp, Socket, Msg} -> 	spawn(?MODULE, pcomandoLogin, [self(), Msg, NameTable]),
-									pSocketLogin(Socket, NameTable, GameTable, UltimoGameID);
-			{rambo, ok, Msg, Username} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable, Username, UltimoGameID);
-			{rambo, error, Msg} -> gen_tcp:send(Socket, Msg), pSocketLogin(Socket, NameTable, GameTable, UltimoGameID);
+pSocketLogin(Socket) -> 
+	receive {tcp, Socket, Msg} -> 	spawn(?MODULE, pcomandoLogin, [self(), Msg]),
+									pSocketLogin(Socket);
+			{rambo, ok, Msg, Username} -> gen_tcp:send(Socket, Msg), psocket(Socket, Username);
+			{rambo, error, Msg} -> gen_tcp:send(Socket, Msg), pSocketLogin(Socket);
 			{close} -> gen_tcp:close(Socket);
-			_ -> io:format("Woops ~n") end.
+			Msg -> io:format("Login woops: ~p ~n", [Msg]) end.
 
 			
-pcomandoLogin(DaddyID, Msg, NameTable) ->
+pcomandoLogin(DaddyID, Msg) ->
 	MsgList = string:tokens(string:trim(Msg), " "),
 	case lists:nth(1, MsgList) of
 		"BYE" ->DaddyID ! {close};
 		"CON" ->Username = lists:nth(2, MsgList),
-				case dets:lookup(NameTable, Username) of
-					[] -> 	dets:insert(NameTable, {Username}), 
-							DaddyID ! {rambo, ok, "OK\n", Username};
-					_ -> DaddyID ! {rambo, error, "ERROR Nombre ya existente\n"} end;
-		_ -> 	DaddyID ! {rambo, error, "ERROR Comando no válido. Inicie sesión con CON NombreDeUsuario\r\n"} end.
+				F = fun() ->
+					case mnesia:read(nameTable, Username) of
+						[] -> 	mnesia:write(#nameTable {name = Username}), 
+								{rambo, ok, "OK\n", Username};
+						_  -> 	{rambo, error, "ERROR Nombre ya existente\n"} end end,
+				{atomic, DaddyMsg} = mnesia:transaction(F),
+				DaddyID ! DaddyMsg;
+		_ -> 	DaddyID ! {rambo, error, "ERROR Comando no valido. Inicie sesion con CON NombreDeUsuario\r\n"} end.
 
 
  
-psocket(Socket, NameTable, GameTable, Username, UltimoGameID) -> 
-	receive {tcp, Socket, Msg} -> 	spawn(?MODULE, pcomando, [self(), Msg, NameTable, GameTable, Username, UltimoGameID]), 
-									psocket(Socket, NameTable, GameTable, Username, UltimoGameID);
+psocket(Socket, Username) -> 
+	receive {tcp, Socket, Msg} -> 	spawn(?MODULE, pcomando, [self(), Msg, Username]), 
+									psocket(Socket, Username);
 			%~ Esto deberia cambiar
-			{rambo, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable, Username, UltimoGameID);
-			{ok, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable, Username, UltimoGameID);
-			{error, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, NameTable, GameTable, Username, UltimoGameID);
+			{rambo, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, Username);
+			{ok, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, Username);
+			{error, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, Username);
 			{close} -> gen_tcp:close(Socket);
 			_ -> io:format("Woops ~n") end.
 
 
-pcomando(DaddyID, Msg, NameTable, GameTable, Username, UltimoGameID) ->
+pcomando(DaddyID, Msg, Username) ->
 	MsgList = string:tokens(string:trim(Msg), " "),
 	case lists:nth(1, MsgList) of
 		"BYE" -> 	DaddyID ! {close};
 		
 		"CON" -> 	DaddyID ! {rambo, "ERROR Sesión ya iniciada\n"};
 					
-		"FIND" -> 	case dets:lookup(NameTable, lists:nth(2, MsgList)) of
-					[] -> DaddyID ! {rambo, "N I S M A N E A D O\n"};
+		"FIND" -> 	case mnesia:transaction(fun() -> mnesia:read(nameTable, lists:nth(2, MsgList)) end) of
+					{aborted, Msg} -> DaddyID ! {rambo, "Find transaction broke: "++Msg++"~n"};
+					{atomic, []} -> DaddyID ! {rambo, "N I S M A N E A D O\n"};
 					_ -> DaddyID ! {rambo, "Acata\n"} end;
-		%~ dummy pls fix		
-		"NEW" ->	GameID = newGame(GameTable, Username, DaddyID, UltimoGameID),
+					
+		"NEW" ->	GameID = newGame(Username, DaddyID),
 					DaddyID ! {rambo, "Game creado, tu GameID es "++integer_to_list(GameID)++"\n"};
 				
 		"ACC" ->	GameID = erlang:list_to_integer(lists:nth(2, MsgList)),
-					joinGame(DaddyID, GameTable, GameID, Username);
+					joinGame(DaddyID, GameID, Username);
 		
-		"PLA" ->	%~ Arreglar GameID
-					GameID = erlang:list_to_integer(lists:nth(2, MsgList)),
+		"PLA" ->	GameID = erlang:list_to_integer(lists:nth(2, MsgList)),
 					Pos = erlang:list_to_integer(lists:nth(3, MsgList)),
-					makeMove(DaddyID, GameTable, GameID, Username, Pos);				
+					makeMove(DaddyID, GameID, Username, Pos);				
 		
 		"OBS" ->	GameID = erlang:list_to_integer(lists:nth(2, MsgList)),
-					spectateGame(DaddyID, GameTable, GameID);
+					spectateGame(DaddyID, GameID);
 
 		_ -> DaddyID ! {rambo, "ERROR Comando no válido\n"} end.
