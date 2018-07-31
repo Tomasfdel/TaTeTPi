@@ -295,7 +295,7 @@ pcomando(DaddyID, Msg, Username) ->
 		_ -> case lists:nth(1, MsgList) of
 					"FIND" -> 	case length(MsgList) of
 									2 -> case mnesia:transaction(fun() -> mnesia:read(nameTable, lists:nth(2, MsgList)) end) of
-											{aborted, Msg} -> DaddyID ! {rambo, "Find transaction broke: "++Msg++"~n"};
+											{aborted, Msg} -> DaddyID ! {rambo, "Find transaction broke: "++Msg++"\n"};
 											{atomic, []} -> DaddyID ! {rambo, "N I S M A N E A D O\n"};
 											_ -> DaddyID ! {rambo, "Acata\n"} 
 										end;
@@ -303,15 +303,23 @@ pcomando(DaddyID, Msg, Username) ->
 								end;
 								
 					"CON" -> 	DaddyID ! {rambo, "ERROR Sesion ya iniciada\n"};
-					%~ TESTING ENVIRONMENT
-					%~ "LSG" -> 	case length(MsgList) of
-									%~ 1 -> PatPending = #gameTable{players = {_}, _ = '_'},
-										 %~ PatFull =#gameTable{players = {_, _}, _ = '_'},
-										 %~ Pending = mnesia:transaction(fun () -> mnesia:match_object(PatPending) end),
-										 %~ Full = mnesia:transaction(fun () -> mnesia:match_object(PatFull) end),
-										 %~ io:format("~p~n~p~n", [Pending, Full]);
-									%~ _ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: LSG\n"} 
-								%~ end; 
+					
+					"LSG" -> case length(MsgList) of
+								1 -> case mnesia:transaction(fun () -> mnesia:match_object({gameTable, '_', '_', '_', {'_'}, '_', '_'}) end) of
+										{atomic, Pending} -> case mnesia:transaction(fun () -> mnesia:match_object({gameTable, '_', '_', '_', {'_', '_'}, '_', '_'}) end) of
+																{atomic, Full} -> 	MapPending = lists:map(fun({_, GameID, _, _, {Owner}, _, _}) -> "ID: "++integer_to_list(GameID)++". Creador: "++Owner++"\n" end, Pending),
+																					MapFull = lists:map(fun({_, GameID, _, _, {P1, P2}, _, _}) -> "ID: "++integer_to_list(GameID)++". Jugadores: "++P1++" - "++P2++"\n" end, Full),
+																					FoldPending = lists:foldr(fun(A,B) -> A ++ B end, "", MapPending),
+																					FoldFull = lists:foldr(fun(A,B) -> A ++ B end, "", MapFull),
+																					DaddyID ! {ok, "Juegos disponibles:\n" ++ FoldPending ++ "\n\nJuegos llenos:\n" ++ FoldFull ++ "\n"};
+																{aborted, Msg} -> DaddyID ! {error, "ERROR Se aborto la busqueda de llenos: "++Msg++"\n"}
+															 end;
+										
+										
+										{aborted, Msg} -> DaddyID ! {error, "ERROR Se aborto la busqueda de pendientes: "++Msg++"\n"}
+									 end;									 
+								_ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: LSG\n"} 
+							 end; 
 					
 					"NEW" ->	case length(MsgList) of
 									1 -> GameID = newGame(Username, DaddyID),
