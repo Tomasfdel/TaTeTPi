@@ -191,14 +191,15 @@ makeMove(DaddyID, GameID, CurrentPlayer, Pos) ->
 joinGame(DaddyID, GameID, Username) ->
 	F = fun() ->
 		case mnesia:read(gameTable, GameID) of
-			[] -> DaddyID ! {error, "ERROR Juego no encontrado\n"};
+			[] -> {error, "ERROR Juego no encontrado\n"};
 			[Game] ->
 				case tuple_size(Game#gameTable.players) of
 					1 -> NewPlayers = erlang:insert_element(2, Game#gameTable.players, Username),
 						 NewPlaIDs = erlang:insert_element(2, Game#gameTable.playerIDs, DaddyID),
 						 mnesia:write(Game#gameTable{players = NewPlayers, playerIDs = NewPlaIDs}),
-						 element(1, Game#gameTable.playerIDs) ! {ok, "OK Se han unido a tu juego\n"},
-						 {ok, "OK Te uniste al juego "++integer_to_list(GameID)++" Kappa\n"};
+						 ListaGameID = integer_to_list(GameID),
+						 element(1, Game#gameTable.playerIDs) ! {ok, "OK "++Username++" se ha unido al juego "++ListaGameID++"\n"},
+						 {ok, "OK Te uniste al juego "++ListaGameID++" contra "++element(1, Game#gameTable.players)++" Kappa\n"};
 					_ -> {error, "ERROR Juego lleno\n"} end;
 			_ -> {error, "ERROR No sabemos sintaxis de Erlang\n"} end end,
 	{atomic, Msg} = mnesia:transaction(F),
@@ -256,17 +257,24 @@ pSocketLogin(Socket) ->
 pcomandoLogin(DaddyID, Msg) ->
 	MsgList = string:tokens(string:trim(Msg), " "),
 	case lists:nth(1, MsgList) of
-		"BYE" ->DaddyID ! {close};
-		"CON" ->Username = lists:nth(2, MsgList),
-				F = fun() ->
-					case mnesia:read(nameTable, Username) of
-						[] -> 	mnesia:write(#nameTable {name = Username}), 
-								{rambo, ok, "OK\n", Username};
-						_  -> 	{rambo, error, "ERROR Nombre ya existente\n"} end end,
-				{atomic, DaddyMsg} = mnesia:transaction(F),
-				DaddyID ! DaddyMsg;
-		_ -> 	DaddyID ! {rambo, error, "ERROR Comando no valido. Inicie sesion con CON NombreDeUsuario\r\n"} end.
-
+		"BYE" -> 	case length(MsgList) of
+						1 -> DaddyID ! {close};
+						_ -> DaddyID ! {rambo, error, "ERROR Demasiados argumentos. Modo de uso: BYE\n"}
+					end;
+		"CON" ->	case length(MsgList) of
+						2 -> Username = lists:nth(2, MsgList),
+							 case mnesia:transaction(fun() -> mnesia:read(nameTable, Username) end) of
+								{aborted, Msg} -> DaddyID ! {rambo, error, "Find transaction broke: "++Msg++"\n"};
+								{atomic, []} -> case mnesia:transaction(fun() -> mnesia:write(#nameTable {name = Username, dummy = 420}) end) of
+													{aborted, Msg} -> DaddyID ! {rambo, error, "ERROR Escritura abortada: "++Msg++"\n"};
+													{atomic, ok} -> DaddyID ! {rambo, ok, "OK\n", Username}
+												end;
+								_ -> DaddyID ! {rambo, error, "ERROR Nombre ya existente\n"}
+							 end;
+						_ -> DaddyID ! {rambo, error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: CON NombreDeUsuario\n"}
+					end;
+						
+		_ -> 	DaddyID ! {rambo, error, "ERROR Comando no valido. Inicie sesion con CON NombreDeUsuario o desconectese con BYE\n"} end.
 
  
 psocket(Socket, Username) -> 
@@ -328,7 +336,10 @@ pcomando(DaddyID, Msg, Username) ->
 											true -> GameID = erlang:list_to_integer(PosibleGameID),
 													case is_integer_list(PosiblePosicion) of
 														true -> Posicion = erlang:list_to_integer(PosiblePosicion),
-																makeMove(DaddyID, GameID, Username, Posicion);
+																case (Posicion >= 1 andalso Posicion =< 9) of
+																	true -> makeMove(DaddyID, GameID, Username, Posicion);
+																	false -> DaddyID ! {error, "ERROR Posicion fuera de rango\n"}
+																end;
 														false -> DaddyID ! {error, "ERROR Valor de Posicion invalido\n"} 
 													end;
 											false -> DaddyID ! {error, "ERROR Valor de GameID invalido\n"} 

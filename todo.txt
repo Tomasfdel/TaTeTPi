@@ -7,12 +7,11 @@ Ver que pasa cuando un jugador abandona una partida
 
 Borrar una partida cuando se va un jugador
 Idle check del jugador
-Hacer el parsing en pcomandologin
 borrar delete table!!!!
 No permitir que te unas a tu propio juego (Bug or feature?)
+Revisar textos mensajes
+Cambiar tuplas de comunicacion entre pcomando y psocket
 
 [TOCHECK]
 
 [KNOWN ISSUES]
-ACC a un juego no existente manda dos mensajes
-PLA no revisa posiciones fuera de rango
