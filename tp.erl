@@ -1,12 +1,13 @@
 -module(tp).
 -compile(export_all).
--record(nameTable, {name, dummy}).
+-record(nameTable, {name, dummy = 420, playing = {}, spectating = {}}).
 -record(gameTable, {gameID,
                     board,
-                    turn,
+                    turn = 1,
                     players,
                     playerIDs,
-                    spectators}).
+                    spectators = {},
+                    spectatorIDs = {}}).
 -record(ultimoGameID, {dummy = 420, id}).
 
 
@@ -15,11 +16,14 @@ newGame(Creator, CreatorID) ->
 	F = fun() ->
 		mnesia:write(#gameTable{gameID     = GameID,
 								board      = newBoard(),
-								turn       = 1,
 								players    = {Creator},
-								playerIDs  = {CreatorID},
-								spectators = {} 
-								}) end,
+								playerIDs  = {CreatorID}
+								}),
+		[Player] = mnesia:read(nameTable, Creator),
+		Pos = tuple_size(Player#nameTable.playing) + 1,
+		NewPlaying = erlang:insert_element(Pos, Player#nameTable.playing, GameID),
+		mnesia:write(Player#nameTable{playing = NewPlaying})
+	end,
 	{atomic, ok} = mnesia:transaction(F),
 	GameID.
 
@@ -160,22 +164,29 @@ is_element_of_tuple(E, T, I, S) when I =< S ->
 is_element_of_tuple(_, _, _, _) -> false.
 
 
-broadcastMove(Board, PlayerIDs, Spectators, CurrentPlayer, GameID) ->
+deleteGame(GameID) ->
+	{atomic, ok} = mnesia:transaction(fun() -> mnesia:delete({gameTable, GameID}) end).
+
+
+
+
+
+broadcastMove(Board, PlayerIDs, SpectatorIDs, CurrentPlayer, GameID) ->
 	PlayerList = erlang:tuple_to_list(PlayerIDs),
-	SpectatorList = erlang:tuple_to_list(Spectators),
+	SpectatorList = erlang:tuple_to_list(SpectatorIDs),
 	BoardString = makeBoardString(Board),
 	sendToList(PlayerList, "Tablero updateado correctamente. Estado actual de la partida "++ integer_to_list(GameID) ++":\n" ++ BoardString ++ "\n"),
 	sendToList(SpectatorList, "Tablero updateado correctamente. Estado actual de la partida "++ integer_to_list(GameID) ++":\n" ++ BoardString ++ "\n"),
 	case checkGameEnd(Board, GameID, CurrentPlayer) of
 		{fin, Msg} -> sendToList(PlayerList, Msg),
 					  sendToList(SpectatorList, Msg),
-					  {atomic, ok} = mnesia:transaction(fun() -> mnesia:delete({gameTable, GameID}) end);
+					  deleteGame(GameID);
 		_ -> ok end.
      
 makeMove(DaddyID, GameID, CurrentPlayer, Pos) ->
 	F = fun() -> case mnesia:read(gameTable, GameID) of
 		[] -> {error, "ERROR Juego no encontrado.\n"};
-		[{_, GameID, Board, Turn, Players, PlayerIDs, Spectators} = Game] ->
+		[{_, GameID, Board, Turn, Players, PlayerIDs, _, SpectatorIDs} = Game] ->
 		case tuple_size(Players) of
 			2 -> case element(Turn, Players) of
 				CurrentPlayer ->
@@ -183,7 +194,7 @@ makeMove(DaddyID, GameID, CurrentPlayer, Pos) ->
 						vacio -> NewBoard = setelement(Pos, Board, turnFig(Turn)),
 								 ok = mnesia:write(Game#gameTable{board = NewBoard, turn = changeTurn(Turn)}),
 								 %~ Movimiento valido
-								 broadcastMove(NewBoard, PlayerIDs, Spectators, CurrentPlayer, GameID),
+								 broadcastMove(NewBoard, PlayerIDs, SpectatorIDs, CurrentPlayer, GameID),
 								 ok;
 						_ -> {error, "ERROR Posicion previamente ocupada.\n"} end;
 				_ -> {error, "ERROR No es tu turno, tramposo!\n"} end;
@@ -204,6 +215,10 @@ joinGame(DaddyID, GameID, Username) ->
 					1 -> NewPlayers = erlang:insert_element(2, Game#gameTable.players, Username),
 						 NewPlaIDs = erlang:insert_element(2, Game#gameTable.playerIDs, DaddyID),
 						 mnesia:write(Game#gameTable{players = NewPlayers, playerIDs = NewPlaIDs}),
+						 [Player] = mnesia:read(nameTable, Username),
+   						 Pos = tuple_size(Player#nameTable.playing) + 1,
+						 NewPlaying = erlang:insert_element(Pos, Player#nameTable.playing, GameID),
+						 mnesia:write(Player#nameTable{playing = NewPlaying}),
 						 ListaGameID = integer_to_list(GameID),
 						 element(1, Game#gameTable.playerIDs) ! {ok, "OK "++Username++" se ha unido al juego "++ListaGameID++".\n"},
 						 {ok, "OK Te uniste al juego "++ListaGameID++" contra "++element(1, Game#gameTable.players)++" Kappa.\n"};
@@ -212,28 +227,39 @@ joinGame(DaddyID, GameID, Username) ->
 	{atomic, Msg} = mnesia:transaction(F),
 	DaddyID ! Msg.
 
-spectateGame(DaddyID, GameID) ->
+spectateGame(DaddyID, GameID, Username) ->
 	F = fun() ->
 		case mnesia:read(gameTable, GameID) of
 			[] -> {error, "ERROR Juego no encontrado.\n"};
 			[Game] ->
 				Pos = tuple_size(Game#gameTable.spectators) + 1,
-				NewSpectators = erlang:insert_element(Pos, Game#gameTable.spectators, DaddyID),
-				mnesia:write(Game#gameTable{spectators = NewSpectators}),
+				NewSpectators = erlang:insert_element(Pos, Game#gameTable.spectators, Username),
+				NewSpectatorIDs = erlang:insert_element(Pos, Game#gameTable.spectatorIDs, DaddyID),
+				mnesia:write(Game#gameTable{spectators = NewSpectators, spectatorIDs = NewSpectatorIDs}),
+				[Player] = mnesia:read(nameTable, Username),
+   				Pos2 = tuple_size(Player#nameTable.spectating) + 1,
+				NewSpectating = erlang:insert_element(Pos2, Player#nameTable.spectating, GameID),
+				mnesia:write(Player#nameTable{spectating = NewSpectating}),
 				{ok, "OK Observando el juego "++integer_to_list(GameID)++". Estado actual de la partida:\n" ++ makeBoardString(Game#gameTable.board) ++ "\n"};
 			_ -> {error, "ERROR No sabemos sintaxis de Erlang.\n"} end end,
 	{atomic, Msg} = mnesia:transaction(F),
 	DaddyID ! Msg.
 
-leaveGame(DaddyID, GameID) ->
+leaveGame(DaddyID, GameID, Username) ->
 	F = fun() ->
 		case mnesia:read(gameTable, GameID) of
 			[] -> {error, "ERROR Juego no encontrado.\n"};
 			[Game] ->
-				case is_element_of_tuple(DaddyID, Game#gameTable.spectators) of
+				case is_element_of_tuple(DaddyID, Game#gameTable.spectatorIDs) of
 					true ->	SpectatorList = tuple_to_list(Game#gameTable.spectators),
-							NewSpectators = list_to_tuple(lists:delete(DaddyID, SpectatorList)),
-							mnesia:write(Game#gameTable{spectators = NewSpectators}),
+							NewSpectators = list_to_tuple(lists:delete(Username, SpectatorList)),
+							SpectatorIDList = tuple_to_list(Game#gameTable.spectatorIDs),
+							NewSpectatorIDs = list_to_tuple(lists:delete(DaddyID, SpectatorIDList)),
+							mnesia:write(Game#gameTable{spectators = NewSpectators, spectatorIDs = NewSpectatorIDs}),
+							[Player] = mnesia:read(nameTable, Username),
+							GamesList = tuple_to_list(Player#nameTable.spectating),
+							NewSpectating = list_to_tuple(lists:delete(GameID, GamesList)),
+							mnesia:write(Player#nameTable{spectating = NewSpectating}),
 							{ok, "OK Has dejado de observar la partida "++integer_to_list(GameID)++".\n"};
 					false -> {error, "ERROR No es un espectador de ese juego.\n"} end;
 			_ -> {error, "ERROR No sabemos sintaxis de Erlang.\n"} end end,
@@ -286,7 +312,7 @@ pcomandoLogin(DaddyID, Msg) ->
 						2 -> Username = lists:nth(2, MsgList),
 							 case mnesia:transaction(fun() -> mnesia:read(nameTable, Username) end) of
 								{aborted, Msg} -> DaddyID ! {error, "ERROR Find transaction broke: "++Msg++"\n"};
-								{atomic, []} -> case mnesia:transaction(fun() -> mnesia:write(#nameTable {name = Username, dummy = 420}) end) of
+								{atomic, []} -> case mnesia:transaction(fun() -> mnesia:write(#nameTable {name = Username}) end) of
 													{aborted, Msg} -> DaddyID ! {error, "ERROR Escritura abortada: "++Msg++".\n"};
 													{atomic, ok} -> DaddyID ! {ok, "OK.\n", Username}
 												end;
@@ -324,10 +350,10 @@ pcomando(DaddyID, Msg, Username) ->
 					"CON" -> 	DaddyID ! {error, "ERROR Sesion ya iniciada.\n"};
 					
 					"LSG" -> case length(MsgList) of
-								1 -> case mnesia:transaction(fun () -> mnesia:match_object({gameTable, '_', '_', '_', {'_'}, '_', '_'}) end) of
-										{atomic, Pending} -> case mnesia:transaction(fun () -> mnesia:match_object({gameTable, '_', '_', '_', {'_', '_'}, '_', '_'}) end) of
-																{atomic, Full} -> 	MapPending = lists:map(fun({_, GameID, _, _, {Owner}, _, _}) -> "ID: "++integer_to_list(GameID)++". Creador: "++Owner++"\n" end, Pending),
-																					MapFull = lists:map(fun({_, GameID, _, _, {P1, P2}, _, _}) -> "ID: "++integer_to_list(GameID)++". Jugadores: "++P1++" - "++P2++"\n" end, Full),
+								1 -> case mnesia:transaction(fun () -> mnesia:match_object({gameTable, '_', '_', '_', {'_'}, '_', '_', '_'}) end) of
+										{atomic, Pending} -> case mnesia:transaction(fun () -> mnesia:match_object({gameTable, '_', '_', '_', {'_', '_'}, '_', '_', '_'}) end) of
+																{atomic, Full} -> 	MapPending = lists:map(fun({_, GameID, _, _, {Owner}, _, _, _}) -> "ID: "++integer_to_list(GameID)++". Creador: "++Owner++"\n" end, Pending),
+																					MapFull = lists:map(fun({_, GameID, _, _, {P1, P2}, _, _, _}) -> "ID: "++integer_to_list(GameID)++". Jugadores: "++P1++" - "++P2++"\n" end, Full),
 																					FoldPending = lists:foldr(fun(A,B) -> A ++ B end, "", MapPending),
 																					FoldFull = lists:foldr(fun(A,B) -> A ++ B end, "", MapFull),
 																					DaddyID ! {ok, "Juegos disponibles:\n" ++ FoldPending ++ "\n\nJuegos llenos:\n" ++ FoldFull ++ "\n"};
@@ -339,13 +365,13 @@ pcomando(DaddyID, Msg, Username) ->
 									 end;									 
 								_ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: LSG\n"} 
 							 end; 
-					
+					% POSSIBLY FIXED
 					"NEW" ->	case length(MsgList) of
 									1 -> GameID = newGame(Username, DaddyID),
 										 DaddyID ! {ok, "Game creado, tu GameID es "++integer_to_list(GameID)++".\n"};
 									_ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: NEW\n"} 
 								end;
-							
+					% POSSIBLY FIXED
 					"ACC" ->	case length(MsgList) of
 									2 -> PosibleGameID = lists:nth(2, MsgList),
 									     case is_integer_list(PosibleGameID) of
@@ -355,7 +381,7 @@ pcomando(DaddyID, Msg, Username) ->
 										 end;
 									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: ACC GameID\n"}
 								end;
-					
+					% TO FIX
 					"PLA" ->	case length(MsgList) of
 									3 -> PosibleGameID = lists:nth(2, MsgList),
 										 PosiblePosicion = lists:nth(3, MsgList),
@@ -373,27 +399,27 @@ pcomando(DaddyID, Msg, Username) ->
 										 end;
 									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: PLA GameID Posicion\n"} 
 								end;
-					
+					% POSSIBLY FIXED
 					"OBS" ->	case length(MsgList) of
 									2 -> PosibleGameID = lists:nth(2, MsgList),
 									     case is_integer_list(PosibleGameID) of
 											true -> GameID = erlang:list_to_integer(PosibleGameID),
-													spectateGame(DaddyID, GameID);
+													spectateGame(DaddyID, GameID, Username);
 											false -> DaddyID ! {error, "ERROR Valor de Game ID invalido.\n"} 
 										 end;
 									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: OBS GameID\n"}
 								end;
-								
+					% POSSIBLY FIXED
 					"LEA" -> 	case length(MsgList) of
 									2 -> PosibleGameID = lists:nth(2, MsgList),
 									     case is_integer_list(PosibleGameID) of
 											true -> GameID = erlang:list_to_integer(PosibleGameID),
-													leaveGame(DaddyID, GameID);
+													leaveGame(DaddyID, GameID, Username);
 											false -> DaddyID ! {error, "ERROR Valor de Game ID invalido.\n"} 
 										 end;
 									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: LEA GameID\n"}
 								end;
-								
+					% PLACEHOLDER	
 					"BYE" -> 	case length(MsgList) of
 									1 -> DaddyID ! {close};
 									_ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: BYE\n"}

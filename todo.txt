@@ -10,7 +10,9 @@ No permitir spectear tu propio juego (Bug or feature?)
 No poder spectear multiples veces un juego (Bug or feature?)
 Cambiar LEA para que permita abandonar una partida que estas jugando?
 Separar el codigo en varios archivos?
+Considerar dejar de pasar los usernames como argumento y usar mnesia:read con el daddyID
 
 [TOCHECK]
 
 [KNOWN ISSUES]
+Eliminar la partida de los records de los jugadores cuando la misma termina
