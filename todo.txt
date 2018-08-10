@@ -1,16 +1,15 @@
 [TODO]
 
 
-Comandos faltantes: LEA, BYE
-Ver que pasa cuando un jugador abandona una partida
-
-
+Comandos faltantes: BYE
 Borrar una partida cuando se va un jugador
 Idle check del jugador
-Borrar delete table!!!!
+Borrar delete table del init!!!!
 No permitir que te unas a tu propio juego (Bug or feature?)
-Revisar textos mensajes
-Cambiar tuplas de comunicacion entre pcomando y psocket
+No permitir spectear tu propio juego (Bug or feature?)
+No poder spectear multiples veces un juego (Bug or feature?)
+Cambiar LEA para que permita abandonar una partida que estas jugando?
+Separar el codigo en varios archivos?
 
 [TOCHECK]
 
