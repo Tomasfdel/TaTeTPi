@@ -1,18 +1,17 @@
 [TODO]
 
-
-Comandos faltantes: BYE
-Borrar una partida cuando se va un jugador
 Idle check del jugador
 Borrar delete table del init!!!!
 No permitir que te unas a tu propio juego (Bug or feature?)
 No permitir spectear tu propio juego (Bug or feature?)
 No poder spectear multiples veces un juego (Bug or feature?)
-Cambiar LEA para que permita abandonar una partida que estas jugando?
 Separar el codigo en varios archivos?
 Considerar dejar de pasar los usernames como argumento y usar mnesia:read con el daddyID
+Hacer consistente la forma de usar las mnesia transactions en funciones
+Modularizar LSG
+Agregar GameIDs a los mensajes de partidas
 
 [TOCHECK]
 
+
 [KNOWN ISSUES]
-Eliminar la partida de los records de los jugadores cuando la misma termina
