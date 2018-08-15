@@ -1,0 +1,32 @@
+Format
+f (functions called in f)
+
+newGame getGameID
+getGameID
+newBoard
+changeTurn
+turnFig
+sendToList
+checkGameEnd
+stateToString
+makeBoardString stateToString
+is_integer_list
+is_element_of_tuple
+removePlayers
+removeSpectators
+deleteGame removePlayers removeSpectators
+broadcastMove makeBoardString sendToList checkGameEnd deleteGame
+makeMove broadcastMove
+joinGame
+spectateGame
+leaveGame
+checkOtherPlayer
+concedeGames checkOtherPlayer sendToList deleteGame
+stopSpectatingGames
+closeSession concedeGames stopSpectatingGames
+init dispatcher
+dispatcher pSocketLogin
+pSocketLogin pcomandoLogin psocket
+pcomandologin
+psocket pcomando
+pcomando newGame is_integer_list joinGame makeMove leaveGame
