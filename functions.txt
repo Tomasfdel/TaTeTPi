@@ -1,6 +1,7 @@
 Format
 f (functions called in f)
 
+
 newGame getGameID
 getGameID
 newBoard
@@ -10,8 +11,8 @@ sendToList
 checkGameEnd
 stateToString
 makeBoardString stateToString
-is_integer_list
-is_element_of_tuple
+isIntegerList
+isElementOfTuple
 removePlayers
 removeSpectators
 deleteGame removePlayers removeSpectators
@@ -29,4 +30,4 @@ dispatcher pSocketLogin
 pSocketLogin pcomandoLogin psocket
 pcomandologin
 psocket pcomando
-pcomando newGame is_integer_list joinGame makeMove leaveGame
+pcomando newGame isIntegerList joinGame spectateGame makeMove leaveGame

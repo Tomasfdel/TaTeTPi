@@ -3,9 +3,6 @@
 Idle check del jugador
 Borrar delete table del init!!!!
 No permitir que te unas a tu propio juego (Bug or feature?)
-No permitir spectear tu propio juego (Bug or feature?)
-No poder spectear multiples veces un juego (Bug or feature?)
-Separar el codigo en varios archivos?
 Considerar dejar de pasar los usernames como argumento y usar mnesia:read con el daddyID
 Hacer consistente la forma de usar las mnesia transactions en funciones
 Modularizar LSG
