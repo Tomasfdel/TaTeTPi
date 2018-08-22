@@ -1,7 +1,6 @@
 Format
 f (functions called in f)
 
-
 newGame getGameID
 getGameID
 newBoard
@@ -25,6 +24,10 @@ checkOtherPlayer
 concedeGames checkOtherPlayer sendToList deleteGame
 stopSpectatingGames
 closeSession concedeGames stopSpectatingGames
+
+
+copyTables
+connectToNode copyTables
 init dispatcher
 dispatcher pSocketLogin
 pSocketLogin pcomandoLogin psocket
