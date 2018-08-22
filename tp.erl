@@ -10,9 +10,35 @@
                     spectators = {},
                     spectatorIDs = {}}).
 -record(ultimoGameID, {dummy = 420, id}).
+-define(TableList, [nameTable, gameTable, ultimoGameID]).
+
+
+add_node(Node) ->
+    case rpc:call(Node, mnesia, system_info, [is_running]) of
+	{badrpc, _} ->
+        exit("Nodo no disponible.");
+	yes ->
+            copy_tables(?TableList, Node);
+	no ->
+	    exit("Mnesia no se esta ejecutando en el nodo que se quiere agregar.") end.
+
+copy_tables([], _) ->
+    ok;
+copy_tables([T|Tablenguels], Node) ->
+    case mnesia:add_table_copy(T, Node, disc_copies) of
+	{atomic, ok} ->
+	    copy_tables(Tablenguels, Node);
+	{aborted, R} ->
+	    exit("Error en add_table_copy: " ++ lists:flatten(io_lib:format("~p", [R]))) end.
 
 init() ->
-	case gen_tcp:listen(8000, [{active, true}]) of
+	init(8000).
+
+inito() ->
+	init('a@x', 8001).
+
+init(Port) ->
+	case gen_tcp:listen(Port, [{active, true}]) of
     {ok, ListenSocket} ->	io:format("Ando~n"),
 							mnesia:delete_schema([node()]),
 							mnesia:create_schema([node()]),
@@ -28,6 +54,32 @@ init() ->
 							io:format("Ando~n"),
 							dispatcher(ListenSocket);
     {error, eaddrinuse} -> init() end.
+
+do_init_slave_node(MasterNode) when MasterNode =/= node() ->
+  %~ ok = mnesia:create_schema()
+  mnesia:start(),
+  {ok, _} = mnesia:change_config(extra_db_nodes, [MasterNode]),
+  mnesia:change_table_copy_type(schema, node(), disc_copies),
+  copy_tables(?TableList, node()).
+
+init(DaddyNode, Port) ->
+	case gen_tcp:listen(Port, [{active, true}]) of
+    {ok, ListenSocket} ->	io:format("Ando~n"),
+							do_init_slave_node(DaddyNode),
+							io:format("Ando~n"),
+							dispatcher(ListenSocket);
+							%~ mnesia:create_schema([node()]),
+							%~ mnesia:start(),
+							%~ case rpc:call(DaddyNode, mnesia, change_config, [extra_db_nodes, [node()]]) of
+								%~ {badrpc, Msg} -> io:format("Error agregando al scheme: ~p~n", [Msg]);
+								%~ _ 			  -> case rpc:call(DaddyNode, tp, add_node, [node()]) of
+												 %~ {badrpc, Msg} -> io:format("Error copiando tablas: ~p~n", [Msg]);
+												 %~ _			   -> mnesia:wait_for_tables(?TableList, 100000),
+																  %~ io:format("Ando~n"),
+																  %~ dispatcher(ListenSocket)
+												 %~ end
+								%~ end;
+    {error, eaddrinuse} -> init(DaddyNode, Port) end.
 
  
 dispatcher(ListenSocket) ->
@@ -64,7 +116,8 @@ pcomandoLogin(DaddyID, Msg) ->
 													{aborted, Msg} -> DaddyID ! {error, "ERROR Escritura abortada: "++Msg++".\n"};
 													{atomic, ok} -> DaddyID ! {ok, "OK.\n", Username}
 												end;
-								_ -> DaddyID ! {error, "ERROR Nombre ya existente.\n"}
+								A -> io:format("El read devolvio ~p~n", [A]);
+								_ 			-> DaddyID ! {error, "ERROR Nombre ya existente.\n"}
 							 end;
 						_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: CON NombreDeUsuario\n"}
 					end;
