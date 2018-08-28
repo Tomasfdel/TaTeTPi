@@ -1,14 +1,14 @@
 [TODO]
 
 Idle check del jugador
-Borrar delete table del init!!!!
 No permitir que te unas a tu propio juego (Bug or feature?)
 Considerar dejar de pasar los usernames como argumento y usar mnesia:read con el daddyID
-Hacer consistente la forma de usar las mnesia transactions en funciones
 Modularizar LSG
 Agregar GameIDs a los mensajes de partidas
+Considerar hacer balance de carga en pcomandoLogin
 
 [TOCHECK]
 
 
 [KNOWN ISSUES]
+Por alguna razón explota el fold del diccionario, aunque lo logré hacer andar con esa función en consola.
