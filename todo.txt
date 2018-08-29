@@ -1,17 +1,23 @@
-[TODO]
+﻿[TODO]
 
-Idle check del jugador
+Tirar un BYE cuando el loco se desconecta
+
+
 No permitir que te unas a tu propio juego (Bug or feature?)
+
 	Si es un feature, tenemos muchos mensajes duplicados
-Considerar dejar de pasar los usernames como argumento y usar mnesia:read con el daddyID
-Modularizar LSG
 Agregar GameIDs a los mensajes de partidas
+
 Considerar hacer balance de carga en pcomandoLogin
-Revisar si se pueden agregar nodos on the fly. 
+
+Revisar si se pueden agregar nodos on the fly.
+ 
 	Además, todo explota si un server se cae en el medio porque sigue en el diccionario.
 
-
 [TOCHECK]
+
+
+
 
 
 [KNOWN ISSUES]

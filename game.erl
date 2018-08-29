@@ -1,5 +1,5 @@
 -module(game).
--export([newGame/2, isIntegerList/1, joinGame/3, spectateGame/3, makeMove/4, leaveGame/3, closeSession/2]).
+-export([newGame/2, isIntegerList/1, joinGame/3, spectateGame/3, makeMove/4, leaveGame/3, closeSession/2, listGames/1]).
 -record(nameTable, {name, playing = {}, spectating = {}}).
 -record(gameTable, {gameID,
                     board,
@@ -186,6 +186,22 @@ deleteGame(GameID) ->
 		removeSpectators(GameID, Game#gameTable.spectators, 1, tuple_size(Game#gameTable.spectators)),
 		mnesia:delete({gameTable, GameID}) end,
 	{atomic, ok} = mnesia:transaction(F).
+
+
+listGames(DaddyID) -> case mnesia:transaction(fun () -> mnesia:match_object({gameTable, '_', '_', '_', {'_'}, '_', '_', '_'}) end) of
+						{atomic, Pending} -> case mnesia:transaction(fun () -> mnesia:match_object({gameTable, '_', '_', '_', {'_', '_'}, '_', '_', '_'}) end) of
+												{atomic, Full} -> 	SortedPending = lists:sort(fun(A, B) -> element(2, A) =< element(2,B) end, Pending),
+																	SortedFull = lists:sort(fun(A, B) -> element(2, A) =< element(2,B) end, Full),
+																	MapPending = lists:map(fun({_, GameID, _, _, {Owner}, _, _, _}) -> "ID: "++integer_to_list(GameID)++". Creador: "++Owner++"\n" end, SortedPending),
+																	MapFull = lists:map(fun({_, GameID, _, _, {P1, P2}, _, _, _}) -> "ID: "++integer_to_list(GameID)++". Jugadores: "++P1++" - "++P2++"\n" end, SortedFull),
+																	FoldPending = lists:foldr(fun(A,B) -> A ++ B end, "", MapPending),
+																	FoldFull = lists:foldr(fun(A,B) -> A ++ B end, "", MapFull),
+																	DaddyID ! {ok, "Juegos disponibles:\n" ++ FoldPending ++ "\n\nJuegos llenos:\n" ++ FoldFull ++ "\n"};
+												{aborted, Msg} -> DaddyID ! {error, "ERROR Se aborto la busqueda de llenos: "++Msg++"\n"}
+											 end;
+						{aborted, Msg} -> DaddyID ! {error, "ERROR Se aborto la busqueda de pendientes: "++Msg++"\n"}
+					  end.
+
 
 
 broadcastMove(Board, PlayerIDs, SpectatorIDs, CurrentPlayer, GameID) ->
