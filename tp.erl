@@ -142,13 +142,17 @@ pcomandoLogin(DaddyID, Msg) ->
 
  
 psocket(Socket, Username) -> 
-	receive {tcp, Socket, Msg} -> 	whereis(balance) ! {getmin, self()},
-	                                receive {balanceResponse, SpawningNode} -> spawn(SpawningNode, tp, pcomando, [self(), Msg, Username]), 
-									                                           psocket(Socket, Username) end;
-			{ok, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, Username);
-			{error, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, Username);
-			{close} -> gen_tcp:close(Socket);
-			_ -> io:format("Woops ~n") end.
+	receive {tcp, Socket, Msg} -> whereis(balance) ! {getmin, self()},
+	                              receive {balanceResponse, SpawningNode} -> spawn(SpawningNode, tp, pcomando, [self(), Msg, Username]), 
+									                                         psocket(Socket, Username) end;
+			{ok, Msg} 		   -> gen_tcp:send(Socket, Msg),
+								  psocket(Socket, Username);
+			{error, Msg} 	   -> gen_tcp:send(Socket, Msg),
+								  psocket(Socket, Username);
+			{close} 		   -> gen_tcp:close(Socket);
+			{tcp_closed, _}    -> spawn(game, closeSession, [self(), Username]),
+								  psocket(Socket, Username);
+			A				   -> io:format("Psocket recibio algo raro: ~p~n", [A]) end.
 
 
 pcomando(DaddyID, Msg, Username) ->
