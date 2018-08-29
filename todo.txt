@@ -1,7 +1,5 @@
 ﻿[TODO]
 
-Tirar un BYE cuando el loco se desconecta
-
 
 No permitir que te unas a tu propio juego (Bug or feature?)
 
@@ -10,9 +8,14 @@ Agregar GameIDs a los mensajes de partidas
 
 Considerar hacer balance de carga en pcomandoLogin
 
-Revisar si se pueden agregar nodos on the fly.
- 
-	Además, todo explota si un server se cae en el medio porque sigue en el diccionario.
+Además, todo explota si un server se cae en el medio porque sigue en el diccionario.
+
+
+
+[TOCONSULT]
+Consultar que onda statistics: active_tasks_all, reductions o algún otro?
+Como hacemos si se cae el servidor / Como estructurar el servidor para no perder cosas si algo se cae
+Ver como resolver el tema de las tablas de mnesia cada vez que booteamos
 
 [TOCHECK]
 
