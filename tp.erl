@@ -11,6 +11,34 @@
                     spectatorIDs = {}}).
 -record(ultimoGameID, {dummy = 420, id}).
 -define(TableList, [nameTable, gameTable, ultimoGameID]).
+-define(PstatTimeout, 5000).
+-define(Infinite, 100000).
+
+getpbalanceID() -> whereis(balance).
+
+sendToNodes([], _) -> ok;
+sendToNodes([Node | NodeList], Workload) -> Nodepbalance = rpc:call(Node, tp, getpbalanceID, []),
+                                            Nodepbalance ! {update, node(), Workload},
+                                            sendToNodes(NodeList, Workload).
+
+
+pstat() -> receive after ?PstatTimeout -> sendToNodes([node() | nodes()], statistics(total_active_tasks)) end,
+           pstat().
+
+minWorkloadNode(Node1, Workload1, {Node2, Workload2}) -> 
+      io:format("N1: ~p  W1: ~p~n{N2, W2} = ~p~n", [Node1, Workload1, {Node2, Workload2}]),
+      if Workload1 < Workload2 ->  {Node1, Workload1};
+         true -> {Node2, Workload2} end.
+
+pbalance(Dictionary) -> receive {update, Node, Workload} -> pbalance(dict:store(Node, Workload, Dictionary));
+                                {getmin, Pid} ->  io:format("El diccionario es: ~p~n", [Dictionary]),
+                                                  io:format("Llamo al fold~n"),
+                                                  FoldResult = dict:fold(fun minWorkloadNode/3, {dummyNode, ?Infinite}, Dictionary),
+                                                  io:format("El resultado del fold es: ~p~n", [FoldResult]),
+                                                  Pid ! {balanceResponse, element(1, FoldResult)},
+                                                  pbalance(Dictionary) end.
+
+
 
 copyTables([], _) ->
     ok;
@@ -21,7 +49,10 @@ copyTables([T|Tablenguels], Node) ->
 	{aborted, R} ->
 	    exit("Error al copiar las tablas: " ++ lists:flatten(io_lib:format("~p", [R]))) end.
 
-connectToNode(MasterNode) when MasterNode =/= node() ->
+connectToNode(MasterNode) ->
+  % Es necesario este when?
+  % when MasterNode =/= node() 
+  pong = net_adm:ping(MasterNode),
   mnesia:start(),
   %~ Agrega el nodo al schema
   {ok, _} = mnesia:change_config(extra_db_nodes, [MasterNode]),
@@ -40,6 +71,8 @@ inito() ->
 init(Port) ->
 	case gen_tcp:listen(Port, [{active, true}]) of
     {ok, ListenSocket} ->	io:format("Ando~n"),
+							register(balance, spawn(?MODULE, pbalance, [dict:store(node(), statistics(total_active_tasks), dict:new())])),
+							spawn(?MODULE, pstat, []),
 							mnesia:delete_schema([node()]),
 							mnesia:create_schema([node()]),
 							mnesia:start(),
@@ -58,6 +91,8 @@ init(Port) ->
 init(DaddyNode, Port) ->
 	case gen_tcp:listen(Port, [{active, true}]) of
     {ok, ListenSocket} ->	io:format("El socket vive, la lucha sigue~n"),
+							register(balance, spawn(?MODULE, pbalance, [dict:store(node(), statistics(total_active_tasks), dict:new())])),
+							spawn(?MODULE, pstat, []),
 							connectToNode(DaddyNode),
 							io:format("Conectado con exito~n"),
 							dispatcher(ListenSocket);
@@ -98,7 +133,6 @@ pcomandoLogin(DaddyID, Msg) ->
 													{aborted, Msg} -> DaddyID ! {error, "ERROR Escritura abortada: "++Msg++".\n"};
 													{atomic, ok} -> DaddyID ! {ok, "OK.\n", Username}
 												end;
-								A -> io:format("El read devolvio ~p~n", [A]);
 								_ 			-> DaddyID ! {error, "ERROR Nombre ya existente.\n"}
 							 end;
 						_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: CON NombreDeUsuario\n"}
@@ -108,8 +142,9 @@ pcomandoLogin(DaddyID, Msg) ->
 
  
 psocket(Socket, Username) -> 
-	receive {tcp, Socket, Msg} -> 	spawn(?MODULE, pcomando, [self(), Msg, Username]), 
-									psocket(Socket, Username);
+	receive {tcp, Socket, Msg} -> 	whereis(balance) ! {getmin, self()},
+	                                receive {balanceResponse, SpawningNode} -> spawn(SpawningNode, tp, pcomando, [self(), Msg, Username]), 
+									                                           psocket(Socket, Username) end;
 			{ok, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, Username);
 			{error, Msg} -> gen_tcp:send(Socket, Msg), psocket(Socket, Username);
 			{close} -> gen_tcp:close(Socket);
@@ -200,7 +235,7 @@ pcomando(DaddyID, Msg, Username) ->
 										 end;
 									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: LEA GameID\n"}
 								end;
-					% PLACEHOLDER	
+					% POSSIBLY FIXED	
 					"BYE" -> 	case length(MsgList) of
 									1 -> closeSession(DaddyID, Username);
 									_ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: BYE\n"}

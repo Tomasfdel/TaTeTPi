@@ -1,7 +1,8 @@
 Format
-f (functions called in f)
+f | (functions called in f)
 
-newGame getGameID
+ -- game.erl --
+newGame | getGameID
 getGameID
 newBoard
 changeTurn
@@ -9,23 +10,29 @@ turnFig
 sendToList
 checkGameEnd
 stateToString
-makeBoardString stateToString
+makeBoardString | stateToString
 isIntegerList
 isElementOfTuple
 removePlayers
 removeSpectators
-deleteGame removePlayers removeSpectators
-broadcastMove makeBoardString sendToList checkGameEnd deleteGame
-makeMove broadcastMove
+deleteGame | removePlayers removeSpectators
+broadcastMove | makeBoardString sendToList checkGameEnd deleteGame
+makeMove | broadcastMove
 joinGame
 spectateGame
 leaveGame
 checkOtherPlayer
-concedeGames checkOtherPlayer sendToList deleteGame
+concedeGames | checkOtherPlayer sendToList deleteGame
 stopSpectatingGames
-closeSession concedeGames stopSpectatingGames
+closeSession | concedeGames stopSpectatingGames
 
 
+ -- tp.erl --
+getpbalanceID 
+sendToNodes | getpbalanceID
+pstat | sendToNodes
+minWorkloadNode
+pbalance | minWorkloadNode
 copyTables
 connectToNode copyTables
 init dispatcher
