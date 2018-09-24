@@ -1,5 +1,5 @@
 -module(game).
--export([newGame/2, isIntegerList/1, joinGame/3, spectateGame/3, makeMove/4, leaveGame/3, closeSession/2, listGames/1]).
+-export([newGame/2, isIntegerList/1, joinGame/3, spectateGame/3, makeMove/4, leaveGame/3, closeSession/2, listGames/1, isElementOfList/2]).
 -record(nameTable, {name, playing = {}, spectating = {}}).
 -record(gameTable, {gameID,
                     board,
@@ -162,6 +162,12 @@ isElementOfTuple(E, T, I, S) when I =< S ->
     end;
 isElementOfTuple(_, _, _, _) -> false.
 
+isElementOfList(_E, []) -> false;
+isElementOfList(E, [H|T]) ->
+	case E == H of
+		true  -> true;
+		false -> isElementOfList(E, T) end.
+
 
 removePlayers(GameID, Players, Current, Size) when Current =< Size ->
 	[CurrentPlayer] = mnesia:read(nameTable, element(Current, Players)),
@@ -205,8 +211,10 @@ listGames(DaddyID) -> case mnesia:transaction(fun () -> mnesia:match_object({gam
 
 
 broadcastMove(Board, PlayerIDs, SpectatorIDs, CurrentPlayer, GameID) ->
-	PlayerList = erlang:tuple_to_list(PlayerIDs),
+	PlayerListDup = erlang:tuple_to_list(PlayerIDs),
 	SpectatorList = erlang:tuple_to_list(SpectatorIDs),
+	PlayerList = lists:usort(PlayerListDup),
+	io:format("La lista de jugadores es: ~p~n", [PlayerList]),
 	BoardString = makeBoardString(Board),
 	sendToList(PlayerList, "Tablero updateado correctamente. Estado actual de la partida "++ integer_to_list(GameID) ++":\n" ++ BoardString ++ "\n"),
 	sendToList(SpectatorList, "Tablero updateado correctamente. Estado actual de la partida "++ integer_to_list(GameID) ++":\n" ++ BoardString ++ "\n"),

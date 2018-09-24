@@ -1,26 +1,11 @@
 ﻿[TODO]
-
-
-No permitir que te unas a tu propio juego (Bug or feature?)
-
-	Si es un feature, tenemos muchos mensajes duplicados
-Agregar GameIDs a los mensajes de partidas
-
-Considerar hacer balance de carga en pcomandoLogin
-
-Además, todo explota si un server se cae en el medio porque sigue en el diccionario.
-
-
+Sacar comentarios bobos.
+Rendir la materia.
 
 [TOCONSULT]
-Consultar que onda statistics: active_tasks_all, reductions o algún otro?
-Como hacemos si se cae el servidor / Como estructurar el servidor para no perder cosas si algo se cae
-Ver como resolver el tema de las tablas de mnesia cada vez que booteamos
+La nota de la materia.
 
 [TOCHECK]
 
-
-
-
-
 [KNOWN ISSUES]
+Guido no contesta nuestros mails.

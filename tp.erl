@@ -1,6 +1,6 @@
 -module(tp).
 -compile(export_all).
--import(game, [newGame/2, isIntegerList/1, joinGame/3, spectateGame/3, makeMove/4, leaveGame/3, closeSession/2, listGames/1]).
+-import(game, [newGame/2, isIntegerList/1, joinGame/3, spectateGame/3, makeMove/4, leaveGame/3, closeSession/2, listGames/1, isElementOfList/2]).
 -record(nameTable, {name, playing = {}, spectating = {}}).
 -record(gameTable, {gameID,
                     board,
@@ -11,8 +11,13 @@
                     spectatorIDs = {}}).
 -record(ultimoGameID, {dummy = 420, id}).
 -define(TableList, [nameTable, gameTable, ultimoGameID]).
--define(PstatTimeout, 5000).
+-define(PstatTimeout, 500).
 -define(Infinite, 100000).
+-define(SpamAmount, 100000).
+
+spamGames(Actual, Total, Username, DaddyID) when Actual < Total -> newGame(Username, DaddyID),
+                                                                   spamGames(Actual+1, Total, Username, DaddyID);
+spamGames(_, _, _, _) -> ok.
 
 getpbalanceID() -> whereis(balance).
 
@@ -30,15 +35,17 @@ minWorkloadNode(Node1, Workload1, {Node2, Workload2}) ->
       if Workload1 < Workload2 ->  {Node1, Workload1};
          true -> {Node2, Workload2} end.
 
+pbalanceAux(Dictionary, Nodes) ->
+	FoldResult = dict:fold(fun minWorkloadNode/3, {dummyNode, ?Infinite}, Dictionary),
+	io:format("El fold en pbalanceAux devolvio ~p~n", [FoldResult]),
+	case isElementOfList(element(1, FoldResult), Nodes) of
+		true  -> {FoldResult, Dictionary};
+		false -> pbalanceAux(dict:erase(element(1, FoldResult), Dictionary), Nodes) end.
+
 pbalance(Dictionary) -> receive {update, Node, Workload} -> pbalance(dict:store(Node, Workload, Dictionary));
-                                {getmin, Pid} ->  io:format("El diccionario es: ~p~n", [Dictionary]),
-                                                  io:format("Llamo al fold~n"),
-                                                  FoldResult = dict:fold(fun minWorkloadNode/3, {dummyNode, ?Infinite}, Dictionary),
-                                                  io:format("El resultado del fold es: ~p~n", [FoldResult]),
-                                                  Pid ! {balanceResponse, element(1, FoldResult)},
-                                                  pbalance(Dictionary) end.
-
-
+                                {getmin, Pid} ->  {MinNode, NewDict} = pbalanceAux(Dictionary, [node()|nodes()]),
+												  Pid ! {balanceResponse, element(1, MinNode)},
+                                                  pbalance(NewDict) end.
 
 copyTables([], _) ->
     ok;
@@ -53,6 +60,11 @@ connectToNode(MasterNode) ->
   % Es necesario este when?
   % when MasterNode =/= node() 
   pong = net_adm:ping(MasterNode),
+  %~ mnesia:delete_schema([node()]),
+  %~ mnesia:delete_table(ultimoGameID),
+  %~ mnesia:delete_table(nameTable),
+  %~ mnesia:delete_table(gameTable),
+  os:cmd("rm -r Mnesia."++atom_to_list(node())++"/"),
   mnesia:start(),
   %~ Agrega el nodo al schema
   {ok, _} = mnesia:change_config(extra_db_nodes, [MasterNode]),
@@ -142,8 +154,9 @@ pcomandoLogin(DaddyID, Msg) ->
 
  
 psocket(Socket, Username) -> 
-	receive {tcp, Socket, Msg} -> whereis(balance) ! {getmin, self()},
-	                              receive {balanceResponse, SpawningNode} -> spawn(SpawningNode, tp, pcomando, [self(), Msg, Username]), 
+	receive {tcp, Socket, Msg} -> getpbalanceID() ! {getmin, self()},
+	                              receive {balanceResponse, SpawningNode} -> io:format("pbalance senpai me noticeo :3~n"),
+																			 spawn(SpawningNode, tp, pcomando, [self(), Msg, Username]), 
 									                                         psocket(Socket, Username) end;
 			{ok, Msg} 		   -> gen_tcp:send(Socket, Msg),
 								  psocket(Socket, Username);
@@ -156,6 +169,7 @@ psocket(Socket, Username) ->
 
 
 pcomando(DaddyID, Msg, Username) ->
+	io:format("Entre a pcomando :) Las cargas, a diferencia del Hearthstone, estan balanceadas.~n"),
 	MsgList = string:tokens(string:trim(Msg), " "),
 	case length(MsgList) of
 		0 -> DaddyID ! {error, "ERROR Mensaje vacio.\n"};
@@ -234,6 +248,9 @@ pcomando(DaddyID, Msg, Username) ->
 									1 -> closeSession(DaddyID, Username);
 									_ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: BYE\n"}
 								end;
+					
+					"BS" -> spamGames(0, ?SpamAmount, Username, DaddyID),
+					        DaddyID ! {ok, "OK Spam terminado"};			
 								
 					_ -> DaddyID ! {error, "ERROR Comando no valido.\n"} 
 			 end
