@@ -31,7 +31,7 @@ pstat() -> receive after ?PstatTimeout -> sendToNodes([node() | nodes()], statis
            pstat().
 
 minWorkloadNode(Node1, Workload1, {Node2, Workload2}) -> 
-      io:format("N1: ~p  W1: ~p~n{N2, W2} = ~p~n", [Node1, Workload1, {Node2, Workload2}]),
+      io:format("Comparing N1: ~p  W1: ~p~n{N2, W2} = ~p~n", [Node1, Workload1, {Node2, Workload2}]),
       if Workload1 < Workload2 ->  {Node1, Workload1};
          true -> {Node2, Workload2} end.
 
@@ -57,13 +57,7 @@ copyTables([T|Tablenguels], Node) ->
 	    exit("Error al copiar las tablas: " ++ lists:flatten(io_lib:format("~p", [R]))) end.
 
 connectToNode(MasterNode) ->
-  % Es necesario este when?
-  % when MasterNode =/= node() 
   pong = net_adm:ping(MasterNode),
-  %~ mnesia:delete_schema([node()]),
-  %~ mnesia:delete_table(ultimoGameID),
-  %~ mnesia:delete_table(nameTable),
-  %~ mnesia:delete_table(gameTable),
   os:cmd("rm -r Mnesia."++atom_to_list(node())++"/"),
   mnesia:start(),
   %~ Agrega el nodo al schema
@@ -82,7 +76,7 @@ inito() ->
 
 init(Port) ->
 	case gen_tcp:listen(Port, [{active, true}]) of
-    {ok, ListenSocket} ->	io:format("Ando~n"),
+    {ok, ListenSocket} ->	io:format("Socket creado con exito."),
 							register(balance, spawn(?MODULE, pbalance, [dict:store(node(), statistics(total_active_tasks), dict:new())])),
 							spawn(?MODULE, pstat, []),
 							mnesia:delete_schema([node()]),
@@ -96,17 +90,17 @@ init(Port) ->
 							mnesia:create_table(gameTable, [{attributes, record_info(fields, gameTable)}]),
 							mnesia:wait_for_tables([ultimoGameID, nameTable, gameTable], 100000),
 							mnesia:transaction(fun() -> mnesia:write(#ultimoGameID{dummy = 420, id = 0}) end),
-							io:format("Ando~n"),
+							io:format("Tablas inicializadas con exito."),
 							dispatcher(ListenSocket);
     {error, eaddrinuse} -> init() end.
 
 init(DaddyNode, Port) ->
 	case gen_tcp:listen(Port, [{active, true}]) of
-    {ok, ListenSocket} ->	io:format("El socket vive, la lucha sigue~n"),
+    {ok, ListenSocket} ->	io:format("Socket creado con exito.~n"),
 							register(balance, spawn(?MODULE, pbalance, [dict:store(node(), statistics(total_active_tasks), dict:new())])),
 							spawn(?MODULE, pstat, []),
 							connectToNode(DaddyNode),
-							io:format("Conectado con exito~n"),
+							io:format("Conectado con exito.~n"),
 							dispatcher(ListenSocket);
     {error, eaddrinuse} -> init(DaddyNode, Port) end.
 
@@ -126,7 +120,7 @@ psocketLogin(Socket) ->
 			{ok, Msg, Username} -> gen_tcp:send(Socket, Msg), psocket(Socket, Username);
 			{error, Msg} -> gen_tcp:send(Socket, Msg), psocketLogin(Socket);
 			{close} -> gen_tcp:close(Socket);
-			Msg -> io:format("Login woops: ~p ~n", [Msg]) end.
+			Msg -> io:format("Error en el login: ~p ~n", [Msg]) end.
 
 			
 pcomandoLogin(DaddyID, Msg) ->
@@ -140,7 +134,7 @@ pcomandoLogin(DaddyID, Msg) ->
 		"CON" ->	case length(MsgList) of
 						2 -> Username = lists:nth(2, MsgList),
 							 case mnesia:transaction(fun() -> mnesia:read(nameTable, Username) end) of
-								{aborted, Msg} -> DaddyID ! {error, "ERROR Find transaction broke: "++Msg++"\n"};
+								{aborted, Msg} -> DaddyID ! {error, "ERROR en la transaction de CON: "++Msg++"\n"};
 								{atomic, []} -> case mnesia:transaction(fun() -> mnesia:write(#nameTable {name = Username}) end) of
 													{aborted, Msg} -> DaddyID ! {error, "ERROR Escritura abortada: "++Msg++".\n"};
 													{atomic, ok} -> DaddyID ! {ok, "OK.\n", Username}
@@ -155,7 +149,7 @@ pcomandoLogin(DaddyID, Msg) ->
  
 psocket(Socket, Username) -> 
 	receive {tcp, Socket, Msg} -> getpbalanceID() ! {getmin, self()},
-	                              receive {balanceResponse, SpawningNode} -> io:format("pbalance senpai me noticeo :3~n"),
+	                              receive {balanceResponse, SpawningNode} -> io:format("Pbalance respondio exitosamente.~n"),
 																			 spawn(SpawningNode, tp, pcomando, [self(), Msg, Username]), 
 									                                         psocket(Socket, Username) end;
 			{ok, Msg} 		   -> gen_tcp:send(Socket, Msg),
@@ -165,11 +159,11 @@ psocket(Socket, Username) ->
 			{close} 		   -> gen_tcp:close(Socket);
 			{tcp_closed, _}    -> spawn(game, closeSession, [self(), Username]),
 								  psocket(Socket, Username);
-			A				   -> io:format("Psocket recibio algo raro: ~p~n", [A]) end.
+			A				   -> io:format("Psocket recibio algo inesperado: ~p~n", [A]) end.
 
 
 pcomando(DaddyID, Msg, Username) ->
-	io:format("Entre a pcomando :) Las cargas, a diferencia del Hearthstone, estan balanceadas.~n"),
+	io:format("Entre a pcomando.~n"),
 	MsgList = string:tokens(string:trim(Msg), " "),
 	case length(MsgList) of
 		0 -> DaddyID ! {error, "ERROR Mensaje vacio.\n"};
@@ -177,7 +171,7 @@ pcomando(DaddyID, Msg, Username) ->
 					"FIND" -> 	case length(MsgList) of
 									2 -> case mnesia:transaction(fun() -> mnesia:read(nameTable, lists:nth(2, MsgList)) end) of
 											{aborted, Msg} -> DaddyID ! {error, "ERROR Find transaction broke: "++Msg++"\n"};
-											{atomic, []} -> DaddyID ! {ok, "N I S M A N E A D O.\n"};
+											{atomic, []} -> DaddyID ! {ok, "El usuario no se encuentra en la base de datos.\n"};
 											_ -> DaddyID ! {ok, "Acata.\n"} 
 										end;
 									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: FIND PlayerName\n"}
@@ -189,13 +183,13 @@ pcomando(DaddyID, Msg, Username) ->
 								1 -> listGames(DaddyID);									 
 								_ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: LSG\n"} 
 							 end; 
-					% POSSIBLY FIXED
+					 
 					"NEW" ->	case length(MsgList) of
 									1 -> GameID = newGame(Username, DaddyID),
 										 DaddyID ! {ok, "Game creado, tu GameID es "++integer_to_list(GameID)++".\n"};
 									_ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: NEW\n"} 
 								end;
-					% POSSIBLY FIXED
+					 
 					"ACC" ->	case length(MsgList) of
 									2 -> PosibleGameID = lists:nth(2, MsgList),
 									     case isIntegerList(PosibleGameID) of
@@ -205,7 +199,7 @@ pcomando(DaddyID, Msg, Username) ->
 										 end;
 									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: ACC GameID\n"}
 								end;
-					% POSSIBLY FIXED
+					 
 					"PLA" ->	case length(MsgList) of
 									3 -> PosibleGameID = lists:nth(2, MsgList),
 										 PosiblePosicion = lists:nth(3, MsgList),
@@ -223,7 +217,7 @@ pcomando(DaddyID, Msg, Username) ->
 										 end;
 									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: PLA GameID Posicion\n"} 
 								end;
-					% POSSIBLY FIXED
+					 
 					"OBS" ->	case length(MsgList) of
 									2 -> PosibleGameID = lists:nth(2, MsgList),
 									     case isIntegerList(PosibleGameID) of
@@ -233,7 +227,7 @@ pcomando(DaddyID, Msg, Username) ->
 										 end;
 									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: OBS GameID\n"}
 								end;
-					% POSSIBLY FIXED
+					 
 					"LEA" -> 	case length(MsgList) of
 									2 -> PosibleGameID = lists:nth(2, MsgList),
 									     case isIntegerList(PosibleGameID) of
@@ -243,7 +237,7 @@ pcomando(DaddyID, Msg, Username) ->
 										 end;
 									_ -> DaddyID ! {error, "ERROR Cantidad incorrecta de argumentos. Modo de uso: LEA GameID\n"}
 								end;
-					% POSSIBLY FIXED	
+					 	
 					"BYE" -> 	case length(MsgList) of
 									1 -> closeSession(DaddyID, Username);
 									_ -> DaddyID ! {error, "ERROR Demasiados argumentos. Modo de uso: BYE\n"}

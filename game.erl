@@ -239,9 +239,8 @@ makeMove(DaddyID, GameID, CurrentPlayer, Pos) ->
 								 ok;
 						_ -> {error, "ERROR Posicion previamente ocupada.\n"} end;
 				_ -> {error, "ERROR No es tu turno, tramposo!\n"} end;
-			_ -> {error, "ERROR Esto no es el solitario, papu.\n"} end;
-		%~ CAMBIAR ESTE MENSAJE ANTES DE ENTREGAR
-		_ -> {error, "ERROR Instructions unclear, dick stuck in ceiling fan.\n"} end end,
+			_ -> {error, "ERROR Esto no es el solitario.\n"} end;
+		_ -> {error, "ERROR La transaccion en makeMove devolvio algo inesperado.\n"} end end,
 	case mnesia:transaction(F) of
 		{atomic, {error, Msg}} -> DaddyID ! {error, Msg};
 		_ -> ok end.
@@ -262,9 +261,9 @@ joinGame(DaddyID, GameID, Username) ->
 						 mnesia:write(Player#nameTable{playing = NewPlaying}),
 						 ListaGameID = integer_to_list(GameID),
 						 element(1, Game#gameTable.playerIDs) ! {ok, "OK "++Username++" se ha unido al juego "++ListaGameID++".\n"},
-						 {ok, "OK Te uniste al juego "++ListaGameID++" contra "++element(1, Game#gameTable.players)++" Kappa.\n"};
+						 {ok, "OK Te uniste al juego "++ListaGameID++" contra "++element(1, Game#gameTable.players)++" \n"};
 					_ -> {error, "ERROR Juego lleno.\n"} end;
-			_ -> {error, "ERROR No sabemos sintaxis de Erlang.\n"} end end,
+			_ -> {error, "ERROR La transaccion en joinGame devolvio algo inesperado.\n"} end end,
 	{atomic, Msg} = mnesia:transaction(F),
 	DaddyID ! Msg.
 
@@ -274,8 +273,7 @@ spectateGame(DaddyID, GameID, Username) ->
 			[] -> {error, "ERROR Juego no encontrado.\n"};
 			[Game] ->
 				case isElementOfTuple(Username, Game#gameTable.spectators) or isElementOfTuple(Username, Game#gameTable.players) of
-				%~ CAMBIAR MENSAJE ANTES DE ENTREGAR
-				true -> {ok, "OK Ya estabas en el juego, no hice nada FeelsEmpleadoEstatalMan\n"};
+				true -> {ok, "OK Ya estabas en el juego, no hice nada.\n"};
 				false ->	
 					Pos = tuple_size(Game#gameTable.spectators) + 1,
 					NewSpectators = erlang:insert_element(Pos, Game#gameTable.spectators, Username),
@@ -286,7 +284,7 @@ spectateGame(DaddyID, GameID, Username) ->
 					NewSpectating = erlang:insert_element(Pos2, Player#nameTable.spectating, GameID),
 					mnesia:write(Player#nameTable{spectating = NewSpectating}),
 					{ok, "OK Observando el juego "++integer_to_list(GameID)++". Estado actual de la partida:\n" ++ makeBoardString(Game#gameTable.board) ++ "\n"} end;
-			_ -> {error, "ERROR No sabemos sintaxis de Erlang.\n"} end end,
+			_ -> {error, "ERROR La transaccion en spectateGame devolvio algo inesperado.\n"} end end,
 	{atomic, Msg} = mnesia:transaction(F),
 	DaddyID ! Msg.
 
@@ -307,7 +305,7 @@ leaveGame(DaddyID, GameID, Username) ->
 							mnesia:write(Player#nameTable{spectating = NewSpectating}),
 							{ok, "OK Has dejado de observar la partida "++integer_to_list(GameID)++".\n"};
 					false -> {error, "ERROR No es un espectador de ese juego.\n"} end;
-			_ -> {error, "ERROR No sabemos sintaxis de Erlang.\n"} end end,
+			_ -> {error, "ERROR La transaccion en leaveGame devolvio algo inesperado.\n"} end end,
 	{atomic, Msg} = mnesia:transaction(F),
 	DaddyID ! Msg.
 	
